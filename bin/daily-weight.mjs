@@ -58,16 +58,22 @@ const SOURCES = { hn: 'HN', reddit: 'Reddit', labs: 'Labs', arxiv: 'arXiv', gith
 // ---------- drawing primitives ----------
 
 const ESC = '\x1b[';
-const fg = (r, g, b) => `${ESC}38;2;${r};${g};${b}m`;
-const bg = (r, g, b) => `${ESC}48;2;${r};${g};${b}m`;
+// 24-bit colour where the terminal says it has it (Windows Terminal, iTerm2, kitty, most Linux
+// terminals set COLORTERM); otherwise the nearest of the 256 standard colours, so macOS
+// Terminal.app and older terminals get close colours instead of wrong ones.
+const TRUECOLOR = /truecolor|24bit/i.test(process.env.COLORTERM ?? '') || !!process.env.WT_SESSION
+  || process.env.TERM_PROGRAM === 'vscode' || (process.platform === 'win32' && process.env.TERM_PROGRAM !== 'mintty');
+const to256 = (r, g, b) => 16 + 36 * Math.round(r / 51) + 6 * Math.round(g / 51) + Math.round(b / 51);
+const fg = (r, g, b) => (TRUECOLOR ? `${ESC}38;2;${r};${g};${b}m` : `${ESC}38;5;${to256(r, g, b)}m`);
+const bg = (r, g, b) => (TRUECOLOR ? `${ESC}48;2;${r};${g};${b}m` : `${ESC}48;5;${to256(r, g, b)}m`);
 const RESET = `${ESC}0m`, BOLD = `${ESC}1m`, DIM = `${ESC}2m`, ITALIC = `${ESC}3m`;
 
-// Palette: the paper's night edition with its red accent, plus one hue per tag.
+// Palette: body text uses the terminal's own foreground (and DIM for secondary text), so it reads
+// on light and dark themes alike. Fixed colours only where they sit on their own background.
 const T = {
-  ink: fg(232, 226, 214), muted: fg(150, 143, 131), faint: fg(90, 86, 80), accent: fg(239, 107, 115),
-  gold: fg(233, 196, 106), rule: fg(70, 68, 74),
-  selFocus: bg(139, 154, 232) + fg(22, 22, 30), selBlur: bg(58, 58, 72) + fg(232, 226, 214),
-  statusBar: bg(139, 154, 232) + fg(22, 22, 30),
+  ink: '', muted: DIM, faint: DIM, accent: fg(226, 84, 96), gold: fg(214, 166, 50), rule: DIM,
+  selFocus: bg(139, 154, 232) + fg(22, 22, 30), selBlur: bg(88, 88, 104) + fg(240, 236, 228),
+  statusBar: bg(139, 154, 232) + fg(22, 22, 30), search: bg(233, 196, 106) + fg(22, 22, 30),
 };
 const CHIP = {
   models: [88, 140, 230], agents: [78, 190, 170], infra: [226, 170, 80], research: [170, 130, 230],
@@ -92,14 +98,15 @@ function fit(s, w) {
   return out + '…' + ' '.repeat(w - n - 1);
 }
 
-// A line made of styled pieces, fitted to w cells.
+// A line made of styled pieces [text, style, url?], fitted to w cells. A url makes the piece a
+// clickable OSC 8 hyperlink in terminals that support it; others just show the text.
 function line(pieces, w, base = '') {
   let out = '', used = 0;
-  for (const [text, style = ''] of pieces) {
+  for (const [text, style = '', url] of pieces) {
     if (used >= w) break;
     const room = w - used;
     const t = width(text) > room ? fit(text, room) : text;
-    out += base + style + t + RESET;
+    out += base + style + (url ? `\x1b]8;;${url}\x07${t}\x1b]8;;\x07` : t) + RESET;
     used += width(t);
   }
   return out + base + ' '.repeat(Math.max(0, w - used)) + RESET;
@@ -138,8 +145,11 @@ let focus = 1;            // 0 sidebar, 1 list, 2 reader
 let filter = { key: 'all', label: 'All stories', test: () => true };
 let message = '';
 let showHelp = false;
+let query = '', searching = false; // "/" search over the current view
 
-const stories = () => (edition?.stories ?? []).filter(filter.test);
+const matches = (s) => !query || [s.title, s.why_read, s.authors.join(' '), SECTIONS[s.section], ...s.sources.map((k) => SOURCES[k])]
+  .join(' ').toLowerCase().includes(query.toLowerCase());
+const stories = () => (edition?.stories ?? []).filter((s) => filter.test(s) && matches(s));
 const current = () => stories()[listAt];
 
 function buildTree() {
@@ -174,7 +184,7 @@ async function openEdition(date) {
     message = `Loading ${longDate(date)}…`; render();
     edition = await loadEdition(date);
     listAt = 0; listTop = 0; readerTop = 0; message = '';
-    buildTree(); markCurrentRead(); render();
+    buildTree(); readSoon(); render();
   } catch (e) { message = `Couldn't load that edition: ${e.message}`; render(); }
 }
 
@@ -185,13 +195,29 @@ function applyTreeRow() {
   if (row.kind === 'filter') {
     filter = row;
     listAt = 0; listTop = 0; readerTop = 0;
-    markCurrentRead(); render();
+    readSoon(); render();
   }
 }
 
-function markCurrentRead() {
+// A story counts as read once it has been on screen for a moment, or when opened with Enter,
+// so skimming down the list doesn't mark everything you passed.
+let readTimer;
+function markRead(s = current()) {
+  if (s && !state.read[idOf(s)]) { state.read[idOf(s)] = 1; save(); buildTree(); }
+}
+function readSoon() {
+  clearTimeout(readTimer);
+  if (SNAPSHOT) return;
   const s = current();
-  if (s && !state.read[idOf(s)]) { state.read[idOf(s)] = 1; save(); }
+  readTimer = setTimeout(() => { if (current() === s) { markRead(s); render(); } }, 1500);
+}
+
+// Moves the story selection from any pane (J/K, n/p), resetting the article to its top.
+function step(delta) {
+  const n = stories().length;
+  if (!n) return;
+  listAt = Math.max(0, Math.min(n - 1, listAt + delta));
+  readerTop = 0; readSoon();
 }
 
 // ---------- OS helpers ----------
@@ -238,14 +264,14 @@ function readerLines(s, w) {
   const tags = [chip(s.section, SECTIONS[s.section].toLowerCase())];
   for (const src of s.sources) tags.push([' '], chip(src, SOURCES[src]));
   if (s.must_read) tags.push([' '], [' must read ', bg(239, 107, 115) + fg(20, 20, 26) + BOLD]);
-  else if (s.recommended) tags.push([' '], [' recommended ', bg(80, 80, 96) + T.ink]);
+  else if (s.recommended) tags.push([' '], [' recommended ', bg(88, 88, 104) + fg(240, 236, 228)]);
 
   const out = [
     L([]),
     L([[`${shortDate(s.date)} ── ${SOURCES[s.source]}`, T.muted]]),
-    ...wrap(s.title, inner).map((t) => L([[t, BOLD + T.ink]])),
-    L([[`by ${s.authors.join(', ')}`, T.muted]])
-    , L(tags), L([]),
+    ...wrap(s.title, inner).map((t) => L([[t, BOLD + T.ink, SITE + s.link]])),
+    L([[`by ${s.authors.join(', ')}`, T.muted]]),
+    L(tags), L([]),
   ];
   const why = wrap(`Why read: ${s.why_read}`, inner);
   why.forEach((t, i) => out.push(L(i === 0 ? [['Why read:', BOLD + T.accent], [t.slice(9), ITALIC + T.ink]] : [[t, ITALIC + T.ink]])));
@@ -254,16 +280,18 @@ function readerLines(s, w) {
     for (const t of wrap(para, inner)) out.push(L([[t, T.ink]]));
     out.push(L([]));
   }
-  out.push(L([['Source  ', T.muted], [s.url, T.ink]]));
-  if (s.discuss_url) out.push(L([['Discuss ', T.muted], [s.discuss_url, T.ink]]));
-  out.push(L([['Read    ', T.muted], [SITE + s.link, T.ink]]));
+  out.push(L([['Source  ', T.muted], [s.url, T.ink, s.url]]));
+  if (s.discuss_url) out.push(L([['Discuss ', T.muted], [s.discuss_url, T.ink, s.discuss_url]]));
+  out.push(L([['Read    ', T.muted], [SITE + s.link, T.ink, SITE + s.link]]));
   if (s.image_credit) out.push(L([]), L([[`Photo: ${s.image_credit}`, T.faint]]));
   return out;
 }
 
 function helpLines(w) {
   const keys = [
-    ['j / k, ↓ / ↑', 'move'], ['tab, h / l', 'switch pane'], ['enter', 'open the story (or the sidebar item)'],
+    ['j / k, ↓ / ↑', 'move (scrolls when the article has focus)'], ['J / K, n / p', 'next / previous story, from any pane'],
+    ['tab, h / l', 'switch pane'], ['enter', 'read the story (or open the sidebar item)'],
+    ['/', 'search this view; enter keeps it, esc clears it'],
     ['esc', 'back to the list'], ['space / b', 'page the article down / up'], ['g / G', 'top / bottom'],
     ['o', 'open the source in your browser'], ['d', 'open the discussion'], ['w', 'open the story on the website'],
     ['c', 'copy the story as text'], ['u', 'copy the source link'], ['m', 'mark / unmark'],
@@ -287,8 +315,11 @@ function frame() {
   const LH = Math.max(4, Math.min(list.length + 1, Math.floor(bodyH * 0.4)));
   const RH = bodyH - LH - 1;
 
+  // Pane titles carry the focus: a red bar and red title on the focused pane, dim elsewhere.
+  const title = (text, on) => (on ? [['▍', T.accent], [text, BOLD + T.accent]] : [[' '], [text, BOLD + T.muted]]);
+
   // sidebar
-  const left = [line([[' THE DAILY WEIGHT', BOLD + T.accent]], LW)];
+  const left = [line(title('THE DAILY WEIGHT', focus === 0), LW)];
   const visible = bodyH - 1;
   if (treeAt < treeTop) treeTop = treeAt;
   if (treeAt >= treeTop + visible) treeTop = treeAt - visible + 1;
@@ -313,8 +344,9 @@ function frame() {
   // story list
   if (listAt < listTop) listTop = listAt;
   if (listAt >= listTop + LH - 1) listTop = listAt - LH + 2;
-  const heading = edition ? `${longDate(edition.date)} · ${filter.label} · ${list.length}` : 'Loading…';
-  const right = [line([[' ' + heading, BOLD + T.muted]], RW)];
+  const heading = edition
+    ? `${longDate(edition.date)} · ${filter.label}${query ? ` · "${query}"` : ''} · ${list.length}` : 'Loading…';
+  const right = [line(title(heading, focus === 1), RW)];
   list.slice(listTop, listTop + LH - 1).forEach((s, i) => {
     const at = listTop + i, id = idOf(s), selected = at === listAt;
     const base = selected ? (focus === 1 ? T.selFocus : T.selBlur) : '';
@@ -328,22 +360,41 @@ function frame() {
       [s.title, selected ? BOLD : (unread ? BOLD + T.ink : T.muted)],
     ], RW, base));
   });
-  if (!list.length && edition) right.push(line([['  No stories in this view.', T.muted]], RW));
+  if (!list.length && edition) {
+    right.push(line([[query ? `  Nothing matches "${query}". Esc clears the search.` : '  No stories in this view.', T.muted]], RW));
+  }
   while (right.length < LH) right.push(line([], RW));
-  right.push(T.rule + '─'.repeat(RW) + RESET);
+
+  // Divider doubles as the article's title bar: position in the list and reading time.
+  const s = current();
+  const minutes = s ? Math.max(1, Math.round(`${s.why_read} ${s.body ?? ''}`.split(/\s+/).length / 220)) : 0;
+  const about = showHelp ? ' Keys ' : s ? ` Story ${listAt + 1} of ${list.length} · ${minutes} min read ` : ' ';
+  const on = focus === 2;
+  right.push(line([['──', on ? T.accent : T.rule], [about, on ? BOLD + T.accent : T.muted], ['─'.repeat(RW), on ? T.accent : T.rule]], RW));
 
   // article
-  const article = readerLines(current(), RW);
+  const article = readerLines(s, RW);
   readerTop = Math.max(0, Math.min(readerTop, Math.max(0, article.length - RH)));
   right.push(...article.slice(readerTop, readerTop + RH));
   while (right.length < bodyH) right.push(line([], RW));
 
-  // status bar
-  const hints = 'j/k move · tab pane · enter open · o source · d discuss · c copy · m mark · ? keys · q quit';
-  const pct = article.length > RH ? ` ${Math.round(((readerTop + RH) / article.length) * 100)}% ` : '';
-  const status = line([[fit(` ${message || hints}`, W - width(pct))], [pct]], W, T.statusBar);
+  // status bar: search prompt while typing, otherwise hints for the focused pane
+  let status;
+  if (searching) {
+    const hint = '  enter keep · esc clear ';
+    status = line([[fit(` / ${query}▏`, W - width(hint))], [hint]], W, T.search);
+  } else {
+    const hints = [
+      'j/k choose · enter open edition · l stories · / search · ? keys · q quit',
+      'j/k move · enter read · J/K next/prev · o source · d discuss · c copy · m mark · / search · ? keys',
+      'j/k scroll · space/b page · J/K next/prev story · esc list · o source · c copy · ? keys',
+    ][focus];
+    const pct = article.length > RH ? `${Math.round(((readerTop + RH) / article.length) * 100)}%` : '';
+    const where = [list.length ? `${listAt + 1}/${list.length}` : '', pct].filter(Boolean).join('  ');
+    status = line([[fit(` ${message || hints}`, W - width(where) - 2)], [` ${where} `]], W, T.statusBar);
+  }
 
-  const border = focus === 0 ? T.accent : T.rule;
+  const border = T.rule;
   let out = `${ESC}H`;
   for (let r = 0; r < bodyH; r++) out += left[r] + border + '│' + RESET + right[r] + '\r\n';
   return out + status;
@@ -358,19 +409,29 @@ function move(delta) {
     // Filters apply as you move; editions wait for Enter so passing over one doesn't load it.
     if (tree[i]) { treeAt = i; if (tree[i].kind === 'filter') applyTreeRow(); }
   } else if (focus === 1) {
-    const n = stories().length;
-    listAt = Math.max(0, Math.min(n - 1, listAt + delta));
-    readerTop = 0; markCurrentRead();
+    step(delta);
   } else {
     readerTop = Math.max(0, readerTop + delta);
   }
 }
 
+// While searching, keys edit the query; the list filters as you type.
+function onSearchKey(str, key) {
+  if (key.name === 'escape') { query = ''; searching = false; }
+  else if (key.name === 'return') { searching = false; if (!query) message = ''; }
+  else if (key.name === 'backspace') query = query.slice(0, -1);
+  else if (str && !key.ctrl && str >= ' ' && str !== '\x7f') query += str;
+  else return;
+  listAt = 0; listTop = 0; readerTop = 0; readSoon();
+  render();
+}
+
 function onKey(str, key = {}) {
+  if (key.ctrl && key.name === 'c') return quit();
+  if (searching) return onSearchKey(str, key);
   message = '';
   const s = current();
   const page = Math.max(1, (process.stdout.rows || 30) - 12);
-  if (key.ctrl && key.name === 'c') return quit();
   // Printable keys by character, so Shift+g arrives as 'G' and Shift+r as 'R'; others by name.
   const k = key.name === 'tab' ? (key.shift ? 'S-tab' : 'tab')
     : str === ' ' ? 'space' : str && /^[!-~]$/.test(str) ? str : key.name;
@@ -382,8 +443,14 @@ function onKey(str, key = {}) {
     case 'S-tab': focus = (focus + 2) % 3; break;
     case 'h': case 'left': focus = Math.max(0, focus - 1); break;
     case 'l': case 'right': focus = Math.min(2, focus + 1); break;
-    case 'return': if (focus === 0) { applyTreeRow(); focus = 1; } else focus = 2; break;
-    case 'escape': showHelp = false; focus = 1; break;
+    case 'return': if (focus === 0) { applyTreeRow(); focus = 1; } else { markRead(); focus = 2; } break;
+    case 'escape':
+      if (showHelp) showHelp = false;
+      else if (query && focus !== 2) { query = ''; listAt = 0; listTop = 0; }
+      focus = 1; break;
+    case 'J': case 'n': step(1); break;
+    case 'K': case 'p': step(-1); break;
+    case '/': searching = true; showHelp = false; if (focus === 0) focus = 1; break;
     case 'space': case 'pagedown': readerTop += page; break;
     case 'b': case 'pageup': readerTop = Math.max(0, readerTop - page); break;
     case 'g': case 'home': if (focus === 2) readerTop = 0; else move(-1e6); break;

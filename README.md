@@ -31,16 +31,18 @@ A three-pane reader: editions, views (unread, marked, must-read), sections and s
 
 | Key | Does |
 |---|---|
-| `j`/`k` or arrows | move |
-| `tab`, `h`/`l` | switch pane |
-| `enter` | open the story, or the sidebar item (editions load on enter) |
+| `j`/`k` or arrows | move (scrolls when the article has focus) |
+| `J`/`K` or `n`/`p` | next / previous story, from any pane |
+| `/` | search the current view as you type; `enter` keeps it, `esc` clears it |
+| `tab`, `h`/`l` | switch pane (the focused pane's title turns red) |
+| `enter` | read the story, or open the sidebar item (editions load on enter) |
 | `space`/`b`, `g`/`G` | page the article, jump to top/bottom |
 | `o` / `d` / `w` | open the source / the discussion / the story on the website |
 | `c` / `u` | copy the story as text / copy the source link |
 | `m` / `r` / `R` | mark, toggle read, mark all in view read |
 | `?` / `q` | keys / quit |
 
-Read and marked stories are remembered in `~/.daily-weight.json`. The reader uses `/editions.json` and `/edition/<date>.json`, which any other client can use too. `npm run check:tui` checks its layout at several terminal sizes.
+A story counts as read after it has been on screen for a moment or when you open it, not when you scroll past it. Links in the article are clickable in terminals that support it (Windows Terminal, iTerm2, kitty, GNOME Terminal). Text uses your terminal's own colours, so light and dark themes both work, and terminals without 24-bit colour get the nearest 256-colour match. Read and marked stories are remembered in `~/.daily-weight.json`. The reader uses `/editions.json` and `/edition/<date>.json`, which any other client can use too. `npm run check:tui` checks its layout at several terminal sizes.
 
 ## Make today's edition
 
