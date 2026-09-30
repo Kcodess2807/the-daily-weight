@@ -27,7 +27,7 @@ npm run tui                          # reads the local site (npm run dev in anot
 npm run tui -- https://your.domain   # reads the published paper
 ```
 
-A three-pane reader: editions, views (unread, marked, must-read), sections and sources on the left; the story list top right; the article below it. No dependencies, and it works in Windows Terminal, macOS and Linux terminals.
+A three-pane reader in bordered panes: editions, views (unread, marked, must-read), sections and sources on the left; the story list; the article in a centred reading column. Terminals 150+ columns wide get three side-by-side columns; narrower ones stack the list over the article. The focused pane has a heavy red border. No dependencies, and it works in Windows Terminal, Warp, macOS and Linux terminals.
 
 | Key | Does |
 |---|---|

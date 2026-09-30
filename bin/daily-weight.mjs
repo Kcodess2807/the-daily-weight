@@ -157,7 +157,7 @@ function buildTree() {
   const count = (test) => all.filter(test).length;
   const rows = [{ header: 'Editions' }];
   for (const e of editions) rows.push({ kind: 'edition', date: e.date, label: shortDate(e.date), count: e.count });
-  rows.push({ header: 'This edition' });
+  rows.push({ header: '' }, { header: 'This edition' });
   const views = [
     ['all', '▸', 'All stories', () => true],
     ['unread', '○', 'Unread', (s) => !state.read[idOf(s)]],
@@ -165,18 +165,18 @@ function buildTree() {
     ['must', '◆', 'Must read', (s) => s.must_read],
   ];
   for (const [key, icon, label, test] of views) rows.push({ kind: 'filter', key, icon, label, test, count: count(test) });
-  rows.push({ header: 'Sections' });
+  rows.push({ header: '' }, { header: 'Sections' });
   for (const [key, label] of Object.entries(SECTIONS)) {
     const test = (s) => s.section === key;
     if (count(test)) rows.push({ kind: 'filter', key: `section:${key}`, icon: '■', chip: key, label, test, count: count(test) });
   }
-  rows.push({ header: 'Sources' });
+  rows.push({ header: '' }, { header: 'Sources' });
   for (const [key, label] of Object.entries(SOURCES)) {
     const test = (s) => s.sources.includes(key);
     if (count(test)) rows.push({ kind: 'filter', key: `source:${key}`, icon: '●', chip: key, label, test, count: count(test) });
   }
   tree = rows;
-  if (!tree[treeAt] || tree[treeAt].header) treeAt = tree.findIndex((r) => !r.header);
+  if (!tree[treeAt] || 'header' in tree[treeAt]) treeAt = tree.findIndex((r) => !('header' in r));
 }
 
 async function openEdition(date) {
@@ -252,10 +252,38 @@ const storyText = (s) => [
 
 // ---------- rendering ----------
 
+// A bordered pane, eilmeldung-style: title set into the top edge, one space of padding inside.
+// The focused pane gets a heavy red border so focus reads even without colour. `lines` must
+// already be exactly `w - 4` cells wide. `scroll` draws a thumb on the right edge.
+function box(lines, w, h, { title = '', on = false, scroll } = {}) {
+  const [tl, tr, bl, br, hz, vt] = on ? ['┏', '┓', '┗', '┛', '━', '┃'] : ['╭', '╮', '╰', '╯', '─', '│'];
+  const edge = on ? T.accent : T.rule;
+  const innerW = w - 4, innerH = h - 2;
+  const label = title ? ` ${fit(title, Math.max(1, w - 6)).trimEnd()} ` : '';
+  const out = [edge + tl + hz + RESET + (on ? BOLD + T.accent : BOLD + T.muted) + label + RESET
+    + edge + hz.repeat(Math.max(0, w - 3 - width(label))) + tr + RESET];
+  let thumb = null;
+  if (scroll && scroll.total > innerH) {
+    const size = Math.max(1, Math.round((innerH * innerH) / scroll.total));
+    const at = Math.round(((innerH - size) * scroll.top) / Math.max(1, scroll.total - innerH));
+    thumb = [at, at + size];
+  }
+  for (let i = 0; i < innerH; i++) {
+    const right = thumb && i >= thumb[0] && i < thumb[1] ? T.accent + '┃' + RESET : edge + vt + RESET;
+    out.push(edge + vt + RESET + ' ' + (lines[i] ?? ' '.repeat(innerW)) + ' ' + right);
+  }
+  out.push(edge + bl + hz.repeat(w - 2) + br + RESET);
+  return out;
+}
+
+const readingMinutes = (s) => Math.max(1, Math.round(`${s.why_read} ${s.body ?? ''}`.split(/\s+/).length / 220));
+
+// The article, set in a centred reading column of at most 84 cells.
 function readerLines(s, w) {
   if (showHelp) return helpLines(w);
-  if (!s) return [line([['  Nothing in this view.', T.muted]], w)];
-  const pad = 2, inner = Math.min(w - pad * 2, 88);
+  if (!s) return [line([], w), line([[' Nothing in this view.', T.muted]], w)];
+  const measure = Math.min(w, 84);
+  const pad = Math.floor((w - measure) / 2);
   const L = (pieces) => line([[' '.repeat(pad)], ...pieces], w);
   const chip = (key, label) => {
     const [r, g, b] = CHIP[key] ?? [150, 150, 150];
@@ -263,27 +291,34 @@ function readerLines(s, w) {
   };
   const tags = [chip(s.section, SECTIONS[s.section].toLowerCase())];
   for (const src of s.sources) tags.push([' '], chip(src, SOURCES[src]));
-  if (s.must_read) tags.push([' '], [' must read ', bg(239, 107, 115) + fg(20, 20, 26) + BOLD]);
+  if (s.must_read) tags.push([' '], [' must read ', bg(226, 84, 96) + fg(255, 255, 255) + BOLD]);
   else if (s.recommended) tags.push([' '], [' recommended ', bg(88, 88, 104) + fg(240, 236, 228)]);
 
   const out = [
     L([]),
-    L([[`${shortDate(s.date)} ── ${SOURCES[s.source]}`, T.muted]]),
-    ...wrap(s.title, inner).map((t) => L([[t, BOLD + T.ink, SITE + s.link]])),
-    L([[`by ${s.authors.join(', ')}`, T.muted]]),
-    L(tags), L([]),
+    L([[`${shortDate(s.date)}  ·  ${SOURCES[s.source]}  ·  ${readingMinutes(s)} min read`, T.muted]]),
+    L([]),
+    ...wrap(s.title, measure).map((t) => L([[t, BOLD + T.ink, SITE + s.link]])),
+    L([[`by ${s.authors.join(', ')}`, ITALIC + T.muted]]),
+    L([]),
+    L(tags),
+    L([]),
   ];
-  const why = wrap(`Why read: ${s.why_read}`, inner);
-  why.forEach((t, i) => out.push(L(i === 0 ? [['Why read:', BOLD + T.accent], [t.slice(9), ITALIC + T.ink]] : [[t, ITALIC + T.ink]])));
+  // "Why read" as a pull quote with a red rule down its left side.
+  out.push(L([['▌ ', T.accent], ['Why read', BOLD + T.accent]]));
+  for (const t of wrap(s.why_read, measure - 2)) out.push(L([['▌ ', T.accent], [t, ITALIC + T.ink]]));
   out.push(L([]));
   for (const para of plainBody(s.body).split(/\n\s*\n/)) {
-    for (const t of wrap(para, inner)) out.push(L([[t, T.ink]]));
+    for (const t of wrap(para, measure)) out.push(L([[t, T.ink]]));
     out.push(L([]));
   }
-  out.push(L([['Source  ', T.muted], [s.url, T.ink, s.url]]));
-  if (s.discuss_url) out.push(L([['Discuss ', T.muted], [s.discuss_url, T.ink, s.discuss_url]]));
-  out.push(L([['Read    ', T.muted], [SITE + s.link, T.ink, SITE + s.link]]));
+  out.push(L([['─'.repeat(Math.min(measure, 24)), T.rule]]));
+  const link = (label, url) => L([[label.padEnd(9), T.muted], [url, T.ink, url]]);
+  out.push(link('Source', s.url));
+  if (s.discuss_url) out.push(link('Discuss', s.discuss_url));
+  out.push(link('Website', SITE + s.link));
   if (s.image_credit) out.push(L([]), L([[`Photo: ${s.image_credit}`, T.faint]]));
+  out.push(L([]));
   return out;
 }
 
@@ -295,11 +330,52 @@ function helpLines(w) {
     ['esc', 'back to the list'], ['space / b', 'page the article down / up'], ['g / G', 'top / bottom'],
     ['o', 'open the source in your browser'], ['d', 'open the discussion'], ['w', 'open the story on the website'],
     ['c', 'copy the story as text'], ['u', 'copy the source link'], ['m', 'mark / unmark'],
-    ['r', 'toggle read'], ['R', 'mark everything in view as read'], ['?', 'this help'], ['q', 'quit'],
+    ['r', 'toggle read'], ['R', 'mark everything in view as read'], ['?', 'close this help'], ['q', 'quit'],
   ];
-  return [line([], w), line([['  Keys', BOLD + T.accent]], w), line([], w),
-    ...keys.map(([k, v]) => line([['  ' + k.padEnd(16), BOLD + T.ink], [v, T.muted]], w)),
+  return [line([], w), ...keys.map(([k, v]) => line([['  ' + k.padEnd(16), BOLD + T.ink], [v, T.muted]], w)),
     line([], w), line([[`  Reading ${SITE}`, T.faint]], w)];
+}
+
+// Sidebar rows at inner width iw, scrolled to keep the cursor visible.
+function sidebarLines(iw, ih) {
+  if (treeAt < treeTop) treeTop = treeAt;
+  if (treeAt >= treeTop + ih) treeTop = treeAt - ih + 1;
+  return tree.slice(treeTop, treeTop + ih).map((row, i) => {
+    if ('header' in row) return line(row.header ? [[row.header, BOLD + T.muted]] : [], iw);
+    const at = treeTop + i;
+    const active = row.kind === 'edition' ? row.date === edition?.date : row.key === filter.key;
+    const selected = at === treeAt;
+    const base = selected ? (focus === 0 ? T.selFocus : T.selBlur) : '';
+    const count = String(row.count);
+    const iconStyle = row.chip ? fg(...CHIP[row.chip]) : row.key === 'marked' ? T.gold : row.key === 'must' ? T.accent : T.muted;
+    const icon = row.kind === 'edition' ? (active ? '●' : '○') : row.icon;
+    return line([
+      [' '], [icon, selected ? '' : iconStyle], [' '],
+      [fit(row.label, iw - 5 - count.length), (active ? BOLD : '') + (selected ? '' : row.count ? T.ink : T.faint)],
+      [` ${count} `, selected ? '' : T.muted],
+    ], iw, base);
+  });
+}
+
+// Story rows: read dot, one marker (marked > must read > recommended), title, section on the right.
+function listLines(list, iw, ih) {
+  if (listAt < listTop) listTop = listAt;
+  if (listAt >= listTop + ih) listTop = listAt - ih + 1;
+  if (!list.length && edition) {
+    return [line([[query ? ` Nothing matches "${query}". Esc clears the search.` : ' No stories in this view.', T.muted]], iw)];
+  }
+  return list.slice(listTop, listTop + ih).map((s, i) => {
+    const id = idOf(s), selected = listTop + i === listAt;
+    const base = selected ? (focus === 1 ? T.selFocus : T.selBlur) : '';
+    const unread = !state.read[id];
+    const [mark, markStyle] = state.marked[id] ? ['★', T.gold] : s.must_read ? ['◆', T.accent] : s.recommended ? ['◇', T.muted] : [' ', ''];
+    const section = SECTIONS[s.section];
+    return line([
+      [' '], [unread ? '●' : ' ', selected ? '' : T.accent], [' '], [mark, selected ? '' : markStyle], ['  '],
+      [fit(s.title, iw - 7 - width(section) - 1), selected ? BOLD : unread ? T.ink : T.muted],
+      [' '], [section, selected ? '' : fg(...CHIP[s.section])], [' '],
+    ], iw, base);
+  });
 }
 
 function render() {
@@ -309,74 +385,29 @@ function render() {
 function frame() {
   const W = process.stdout.columns || 100, H = process.stdout.rows || 30;
   const bodyH = H - 1;
-  const LW = Math.max(22, Math.min(34, Math.floor(W * 0.26)));
-  const RW = W - LW - 1;
   const list = stories();
-  const LH = Math.max(4, Math.min(list.length + 1, Math.floor(bodyH * 0.4)));
-  const RH = bodyH - LH - 1;
-
-  // Pane titles carry the focus: a red bar and red title on the focused pane, dim elsewhere.
-  const title = (text, on) => (on ? [['▍', T.accent], [text, BOLD + T.accent]] : [[' '], [text, BOLD + T.muted]]);
-
-  // sidebar
-  const left = [line(title('THE DAILY WEIGHT', focus === 0), LW)];
-  const visible = bodyH - 1;
-  if (treeAt < treeTop) treeTop = treeAt;
-  if (treeAt >= treeTop + visible) treeTop = treeAt - visible + 1;
-  tree.slice(treeTop, treeTop + visible).forEach((row, i) => {
-    const at = treeTop + i;
-    if (row.header) return left.push(line([[` ▾ ${row.header}`, BOLD + T.muted]], LW));
-    const active = row.kind === 'edition' ? row.date === edition?.date : row.key === filter.key;
-    const selected = at === treeAt;
-    const base = selected ? (focus === 0 ? T.selFocus : T.selBlur) : '';
-    const count = String(row.count);
-    const iconStyle = row.chip ? fg(...CHIP[row.chip]) : row.key === 'marked' ? T.gold : row.key === 'must' ? T.accent : T.muted;
-    const icon = row.kind === 'edition' ? (active ? '●' : '○') : row.icon;
-    const labelW = LW - 7 - count.length;
-    left.push(line([
-      ['   '], [icon, selected ? '' : iconStyle], [' '],
-      [fit(row.label, labelW), (active ? BOLD : '') + (selected ? '' : row.count ? T.ink : T.faint)],
-      [` ${count} `, selected ? '' : ITALIC + T.muted],
-    ], LW, base));
-  });
-  while (left.length < bodyH) left.push(line([], LW));
-
-  // story list
-  if (listAt < listTop) listTop = listAt;
-  if (listAt >= listTop + LH - 1) listTop = listAt - LH + 2;
-  const heading = edition
-    ? `${longDate(edition.date)} · ${filter.label}${query ? ` · "${query}"` : ''} · ${list.length}` : 'Loading…';
-  const right = [line(title(heading, focus === 1), RW)];
-  list.slice(listTop, listTop + LH - 1).forEach((s, i) => {
-    const at = listTop + i, id = idOf(s), selected = at === listAt;
-    const base = selected ? (focus === 1 ? T.selFocus : T.selBlur) : '';
-    const unread = !state.read[id];
-    right.push(line([
-      [' '], [unread ? '●' : '○', selected ? '' : unread ? T.accent : T.faint], [' '],
-      [state.marked[id] ? '★' : ' ', selected ? '' : T.gold], [' '],
-      [s.must_read ? '◆' : s.recommended ? '◇' : ' ', selected ? '' : T.accent], ['  '],
-      [fit(SECTIONS[s.section], 9), selected ? '' : fg(...CHIP[s.section])],
-      [fit(SOURCES[s.source], 7), selected ? '' : T.muted],
-      [s.title, selected ? BOLD : (unread ? BOLD + T.ink : T.muted)],
-    ], RW, base));
-  });
-  if (!list.length && edition) {
-    right.push(line([[query ? `  Nothing matches "${query}". Esc clears the search.` : '  No stories in this view.', T.muted]], RW));
-  }
-  while (right.length < LH) right.push(line([], RW));
-
-  // Divider doubles as the article's title bar: position in the list and reading time.
   const s = current();
-  const minutes = s ? Math.max(1, Math.round(`${s.why_read} ${s.body ?? ''}`.split(/\s+/).length / 220)) : 0;
-  const about = showHelp ? ' Keys ' : s ? ` Story ${listAt + 1} of ${list.length} · ${minutes} min read ` : ' ';
-  const on = focus === 2;
-  right.push(line([['──', on ? T.accent : T.rule], [about, on ? BOLD + T.accent : T.muted], ['─'.repeat(RW), on ? T.accent : T.rule]], RW));
 
-  // article
-  const article = readerLines(s, RW);
-  readerTop = Math.max(0, Math.min(readerTop, Math.max(0, article.length - RH)));
-  right.push(...article.slice(readerTop, readerTop + RH));
-  while (right.length < bodyH) right.push(line([], RW));
+  // Wide terminals get three columns; narrower ones stack the list over the article.
+  const wide = W >= 150;
+  const SW = Math.max(24, Math.min(32, Math.floor(W * 0.2)));
+  const LW = wide ? Math.max(48, Math.min(76, Math.floor((W - SW) * 0.42))) : W - SW;
+  const AW = wide ? W - SW - LW : W - SW;
+  const LH = wide ? bodyH : Math.max(6, Math.min(list.length + 2, Math.floor(bodyH * 0.42)));
+  const AH = wide ? bodyH : bodyH - LH;
+
+  const heading = edition
+    ? `${shortDate(edition.date)} · ${filter.label}${query ? ` · "${query}"` : ''} · ${list.length}` : 'Loading…';
+  const sidebar = box(sidebarLines(SW - 4, bodyH - 2), SW, bodyH, { title: 'The Daily Weight', on: focus === 0 });
+  const stories_ = box(listLines(list, LW - 4, LH - 2), LW, LH,
+    { title: heading, on: focus === 1, scroll: { top: listTop, total: list.length } });
+
+  const article = readerLines(s, AW - 4);
+  const AI = AH - 2;
+  readerTop = Math.max(0, Math.min(readerTop, Math.max(0, article.length - AI)));
+  const aTitle = showHelp ? 'Keys' : s ? `Story ${listAt + 1} of ${list.length}` : 'Article';
+  const reader = box(article.slice(readerTop, readerTop + AI), AW, AH,
+    { title: aTitle, on: focus === 2, scroll: { top: readerTop, total: article.length } });
 
   // status bar: search prompt while typing, otherwise hints for the focused pane
   let status;
@@ -389,14 +420,16 @@ function frame() {
       'j/k move · enter read · J/K next/prev · o source · d discuss · c copy · m mark · / search · ? keys',
       'j/k scroll · space/b page · J/K next/prev story · esc list · o source · c copy · ? keys',
     ][focus];
-    const pct = article.length > RH ? `${Math.round(((readerTop + RH) / article.length) * 100)}%` : '';
+    const pct = article.length > AI ? `${Math.round(((readerTop + AI) / article.length) * 100)}%` : '';
     const where = [list.length ? `${listAt + 1}/${list.length}` : '', pct].filter(Boolean).join('  ');
     status = line([[fit(` ${message || hints}`, W - width(where) - 2)], [` ${where} `]], W, T.statusBar);
   }
 
-  const border = T.rule;
   let out = `${ESC}H`;
-  for (let r = 0; r < bodyH; r++) out += left[r] + border + '│' + RESET + right[r] + '\r\n';
+  for (let r = 0; r < bodyH; r++) {
+    const rightCol = wide ? stories_[r] + reader[r] : (r < LH ? stories_[r] : reader[r - LH]);
+    out += sidebar[r] + rightCol + '\r\n';
+  }
   return out + status;
 }
 
@@ -405,7 +438,7 @@ function frame() {
 function move(delta) {
   if (focus === 0) {
     let i = treeAt;
-    do { i += delta; } while (tree[i]?.header);
+    do { i += delta; } while (tree[i] && 'header' in tree[i]);
     // Filters apply as you move; editions wait for Enter so passing over one doesn't load it.
     if (tree[i]) { treeAt = i; if (tree[i].kind === 'filter') applyTreeRow(); }
   } else if (focus === 1) {

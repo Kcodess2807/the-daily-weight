@@ -23,19 +23,20 @@ for (const [size, keys, label] of [
 
 // Behaviour: what the screen says after a key sequence.
 const expect = (label, keys, test) => {
-  const out = snap('120x34', keys);
+  const out = snap(label.startsWith('wide') ? '180x40' : '120x34', keys);
   const ok = test(out);
   if (!ok) fail++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}`);
 };
-const heading = (out) => out.split('\n')[0];
-const count = (out) => Number(heading(out).match(/· (\d+)\s*$/)?.[1]);
+const heading = (out) => out.split('\n')[0]; // the list box's title sits in the top border
+const count = (out) => Number(heading(out).match(/· (\d+) [─━]/)?.[1]);
 expect('search narrows the list and names the query', '/openai\r',
   (o) => heading(o).includes('"openai"') && count(o) > 0 && count(o) < count(snap('120x34')));
 expect('a search with no matches says how to clear it', '/zzqqxx\r', (o) => o.includes('Nothing matches "zzqqxx". Esc clears'));
 expect('esc clears the search', '/openai\r\x1b', (o) => !heading(o).includes('"openai"'));
 expect('J moves to the next story from the article pane', '\rJ', (o) => /Story 2 of \d+/.test(o));
-expect('the focused pane is marked', 'h', (o) => o.split('\n')[0].startsWith('▍THE DAILY WEIGHT'));
+expect('the focused pane gets the heavy border', 'h', (o) => o.startsWith('┏━ The Daily Weight') && heading(o).includes('╭─ '));
+expect('wide terminals get three columns', '', (o) => (heading(o).match(/[╭┏]/g) ?? []).length === 3);
 expect('the status bar shows the position', 'jj', (o) => /\b3\/\d+\b/.test(o.split('\n').at(-2) || o.split('\n').at(-1)));
 
 process.exitCode = fail ? 1 : 0;
