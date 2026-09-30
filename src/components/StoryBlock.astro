@@ -1,0 +1,26 @@
+---
+import { SECTIONS, filterAttrs, href, type Story } from '../editions';
+interface Props { story: Story; size?: 'lead' | 'second' | 'card' | 'brief' }
+const { story, size = 'card' } = Astro.props;
+const d = story.data;
+const link = href(story);
+const Heading = size === 'lead' ? 'h2' : 'h3';
+const grade = d.must_read ? 'Must read' : d.recommended ? 'Recommended' : null;
+---
+<article
+  class={`story ${size}`}
+  {...filterAttrs(story)}
+>
+  {d.image && (
+    <a class="pic" href={link} tabindex="-1" aria-hidden="true">
+      <img src={d.image} alt="" loading={size === 'lead' ? 'eager' : 'lazy'} decoding="async" />
+    </a>
+  )}
+  {size !== 'brief' && <p class="kicker">{SECTIONS[d.section]}{grade && <span class="grade">{grade}</span>}</p>}
+  <Heading><a href={link}>{d.title}</a></Heading>
+  {size !== 'brief' && <p class="why"><strong>Why read:</strong> {d.why_read}</p>}
+  <p class="meta">
+    By {d.authors.join(', ')} · <a href={d.url}>Source ›</a>
+    {d.discuss_url && <> · <a href={d.discuss_url}>Discuss ›</a></>}
+  </p>
+</article>

@@ -1,0 +1,54 @@
+---
+import { SOURCES, type Story } from '../editions';
+interface Props { stories: Story[] }
+const { stories } = Astro.props;
+const count = (key: string) => (key === 'all' ? stories.length : stories.filter((s) => s.data.source === key).length);
+const sources = [['all', 'All'], ...Object.entries(SOURCES)];
+const quality = [['all', 'All'], ['rec', 'Recommended'], ['must', 'Must-Read']];
+---
+<form class="filters" autocomplete="off" hidden>
+  <fieldset>
+    <legend>Source</legend>
+    {sources.map(([value, label], i) => (
+      <label class="chip"><input type="radio" name="source" value={value} checked={i === 0} disabled={count(value) === 0} /><span>{label} <small>{count(value)}</small></span></label>
+    ))}
+  </fieldset>
+  <fieldset>
+    <legend>Quality</legend>
+    {quality.map(([value, label], i) => (
+      <label class="chip"><input type="radio" name="quality" value={value} checked={i === 0} /><span>{label}</span></label>
+    ))}
+  </fieldset>
+  <p class="status">
+    <output aria-live="polite"></output>
+    <button class="clear" type="reset">Clear filters</button>
+  </p>
+</form>
+<script>
+  const form = document.querySelector<HTMLFormElement>('.filters')!;
+  const items = [...document.querySelectorAll<HTMLElement>('main [data-source]')]; // stories + headline rail
+  const total = document.querySelectorAll('.story').length;
+  const count = document.querySelector('[data-count]')!;
+  const status = form.querySelector('output')!;
+  const empty = document.querySelector<HTMLElement>('[data-empty]')!;
+  const stories_ = (n: number) => `${n} ${n === 1 ? 'Story' : 'Stories'}`;
+
+  const apply = () => {
+    const src = (form.elements.namedItem('source') as RadioNodeList).value;
+    const q = (form.elements.namedItem('quality') as RadioNodeList).value;
+    let n = 0;
+    for (const el of items) {
+      const show = (src === 'all' || el.dataset.source === src) && (q === 'all' || el.dataset[q] === 'true');
+      el.hidden = !show;
+      if (show && el.classList.contains('story')) n++;
+    }
+    count.textContent = stories_(n);
+    status.textContent = n === total ? `Showing all ${stories_(n).toLowerCase()}` : `Showing ${n} of ${total}`;
+    empty.hidden = n > 0;
+  };
+
+  form.hidden = false;
+  form.addEventListener('change', apply);
+  form.addEventListener('reset', () => setTimeout(apply)); // values reset after the event
+  apply(); // browsers can restore radio state on back/reload
+</script>

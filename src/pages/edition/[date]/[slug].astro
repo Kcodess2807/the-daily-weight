@@ -1,0 +1,62 @@
+---
+import { render } from 'astro:content';
+import Edition from '../../../layouts/Edition.astro';
+import { SECTIONS, getEditions, href, longDate, slug, type Edition as E, type Story } from '../../../editions';
+
+export async function getStaticPaths() {
+  return (await getEditions()).flatMap((edition) =>
+    edition.stories.map((story) => ({ params: { date: edition.date, slug: slug(story) }, props: { story, edition } })),
+  );
+}
+const { story, edition } = Astro.props as { story: Story; edition: E };
+const d = story.data;
+const { Content } = await render(story);
+const more = edition.stories.filter((s) => s !== story);
+const i = edition.stories.indexOf(story);
+const [prev, next] = [edition.stories[i - 1], edition.stories[i + 1]];
+const minutes = Math.max(1, Math.round((story.body ?? '').split(/s+/).length / 220));
+const grade = d.must_read ? 'Must read' : d.recommended ? 'Recommended' : null;
+---
+<Edition title={`${d.title} — The Daily Weight`} edition={edition}>
+  <div class="article-page">
+    <article class="article">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href={`/edition/${edition.date}`}>{longDate(edition.date)}</a> › <span class="kicker">{SECTIONS[d.section]}</span>
+        {grade && <span class="grade">{grade}</span>}
+      </nav>
+      <h1>{d.title}</h1>
+      <p class="standfirst">{d.why_read}</p>
+      <p class="meta">
+        By {d.authors.join(', ')} · {minutes} min read
+      </p>
+      {d.image && (
+        <figure>
+          <img src={d.image} alt="" />
+          {d.image_credit && (
+            <figcaption>Photo: {d.image_source ? <a href={d.image_source}>{d.image_credit}</a> : d.image_credit}</figcaption>
+          )}
+        </figure>
+      )}
+      <div class="body"><Content /></div>
+      <p class="outlinks">
+        <a href={d.url}>Read the source ›</a>
+        {d.discuss_url && <a href={d.discuss_url}>Discuss ›</a>}
+      </p>
+      <nav class="pager" aria-label="More stories">
+        {prev ? <a href={href(prev)} rel="prev"><small>‹ Previous story</small>{prev.data.title}</a> : <span />}
+        {next && <a href={href(next)} rel="next"><small>Next story ›</small>{next.data.title}</a>}
+      </nav>
+    </article>
+    <aside class="rail">
+      <h2>More from this edition</h2>
+      <ul class="more">
+        {more.map((s) => (
+          <li>
+            {s.data.image && <img src={s.data.image} alt="" loading="lazy" />}
+            <a href={href(s)}>{s.data.title}</a>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  </div>
+</Edition>

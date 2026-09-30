@@ -1,0 +1,6 @@
+---
+import Edition from '../layouts/Edition.astro';
+import { getEditions } from '../editions';
+const [latest] = await getEditions();
+---
+<Edition title="The Daily Weight — An AI Newspaper" edition={latest} front />

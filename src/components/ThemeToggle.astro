@@ -1,0 +1,17 @@
+---
+---
+<button class="toggle" type="button" hidden>Night mode</button>
+<script>
+  const root = document.documentElement;
+  const btn = document.querySelector<HTMLButtonElement>('.toggle')!;
+  const current = () =>
+    root.dataset.theme ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'night' : 'day');
+  const label = () => (btn.textContent = current() === 'night' ? 'Day mode' : 'Night mode');
+  btn.hidden = false;
+  label();
+  btn.addEventListener('click', () => {
+    root.dataset.theme = current() === 'night' ? 'day' : 'night';
+    try { localStorage.setItem('theme', root.dataset.theme); } catch {}
+    label();
+  });
+</script>

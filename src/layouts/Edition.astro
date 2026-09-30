@@ -1,0 +1,85 @@
+---
+import '../styles/main.css';
+import Masthead from '../components/Masthead.astro';
+import FilterBar from '../components/FilterBar.astro';
+import StoryBlock from '../components/StoryBlock.astro';
+import { filterAttrs, frontPage, getEditions, href, longDate, plural, type Edition } from '../editions';
+
+// With `front`, renders the edition's front page; otherwise the page body comes from the slot.
+interface Props { title: string; edition: Edition; front?: boolean }
+const { title, edition, front = false } = Astro.props;
+const { lead, seconds, sections } = frontPage(edition);
+const otherEditions = (await getEditions()).filter((e) => e.date !== edition.date).slice(0, 6);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content="A daily AI newspaper for people who build or follow models, agents, infra, research and safety." />
+    <script is:inline>try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=PT+Sans:wght@400;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" />
+    <link rel="alternate" type="application/rss+xml" title="The Daily Weight" href="/rss.xml" />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to stories</a>
+    <div class="page">
+      <Masthead edition={edition} />
+      <main id="content">
+        {front ? (
+          <>
+            <FilterBar stories={edition.stories} />
+            <p class="empty" data-empty hidden>No stories match the selected filters in today's edition.</p>
+            <section class="top" id="top" aria-label="Top stories">
+              <StoryBlock story={lead} size="lead" />
+              {seconds.length > 0 && (
+                <div class="seconds">{seconds.map((s) => <StoryBlock story={s} size="second" />)}</div>
+              )}
+              <aside class="rail">
+                <h2>Today's headlines</h2>
+                <ol>{edition.stories.map((s) => <li {...filterAttrs(s)}><a href={href(s)}>{s.data.title}</a></li>)}</ol>
+              </aside>
+            </section>
+            <div class="desk">
+              {sections.map((sec) => (
+                <section class="section" id={sec.key} aria-labelledby={`h-${sec.key}`}>
+                  <h2 id={`h-${sec.key}`}>{sec.label}</h2>
+                  {sec.stories.map((s, i) => <StoryBlock story={s} size={i === 0 ? 'card' : 'brief'} />)}
+                </section>
+              ))}
+              {otherEditions.length > 0 && (
+                <nav class="section editions" aria-labelledby="h-editions">
+                  <h2 id="h-editions">Previous editions</h2>
+                  <ul>
+                    {otherEditions.map((e) => (
+                      <li><a href={`/edition/${e.date}`}>{longDate(e.date)}</a><span>{plural(e.stories.length)}</span></li>
+                    ))}
+                  </ul>
+                  <a class="all" href="/archive">Full archive ›</a>
+                </nav>
+              )}
+            </div>
+            {edition.stories.some((s) => s.data.sample) && (
+              <p class="note">This is a sample edition. The stories are illustrative and link to placeholder addresses. Photos from Wikimedia Commons, credited on each story.</p>
+            )}
+          </>
+        ) : (
+          <slot />
+        )}
+      </main>
+      <footer class="footer">
+        <p class="footer-name">The Daily Weight</p>
+        <nav aria-label="Feeds and archive">
+          <a href="/archive">Archive</a>
+          <a href="/rss.xml">RSS</a>
+          <a href="/md">Markdown</a>
+          <a href="/json">JSON</a>
+        </nav>
+        <p>One edition a day on models, agents, infra, research and safety. The paper ends when you reach the bottom.</p>
+      </footer>
+    </div>
+  </body>
+</html>

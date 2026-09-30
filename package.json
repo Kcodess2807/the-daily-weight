@@ -1,0 +1,15 @@
+{
+  "name": "the-daily-weight",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "fetch": "node scripts/fetch.mjs",
+    "edition": "node scripts/fetch.mjs && claude -p \"Follow the instructions in scripts/editor-prompt.md\" --allowedTools \"Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Bash(node scripts/images.mjs:*),Bash(npm run build)\""
+  },
+  "dependencies": {
+    "astro": "^7.3.5"
+  }
+}

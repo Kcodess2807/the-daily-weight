@@ -1,0 +1,52 @@
+import { getCollection, type CollectionEntry } from 'astro:content';
+
+export type Story = CollectionEntry<'stories'>;
+export type Edition = { date: string; stories: Story[] };
+
+export const SOURCES = {
+  hn: 'HN', reddit: 'Reddit', labs: 'Labs', arxiv: 'arXiv', github: 'GitHub', press: 'Press',
+} as const;
+
+// Attributes the front-page filter reads; shared by story blocks and the headline rail.
+export const filterAttrs = ({ data: d }: Story) => ({
+  'data-source': d.source,
+  'data-rec': String(d.recommended || d.must_read),
+  'data-must': String(d.must_read),
+});
+export const SECTIONS = {
+  models: 'Models', agents: 'Agents', infra: 'Infra', research: 'Research', safety: 'Safety', industry: 'Industry',
+} as const;
+
+// Newest edition first; stories within an edition by interest, highest first.
+export async function getEditions(): Promise<Edition[]> {
+  const byDate = new Map<string, Story[]>();
+  for (const s of await getCollection('stories')) {
+    byDate.set(s.data.date, [...(byDate.get(s.data.date) ?? []), s]);
+  }
+  return [...byDate]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, stories]) => ({
+      date,
+      stories: stories.sort((a, b) => b.data.interest_score - a.data.interest_score),
+    }));
+}
+
+export const slug = (s: Story) => s.id.split('/').pop()!;
+export const href = (s: Story) => `/edition/${s.data.date}/${slug(s)}`;
+
+export const longDate = (date: string) =>
+  new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
+  });
+
+export const plural = (n: number) => `${n} ${n === 1 ? 'Story' : 'Stories'}`;
+
+// Front page split: lead, two seconds, then the rest boxed by section (only sections with stories left).
+export function frontPage({ stories }: Edition) {
+  const [lead, ...others] = stories;
+  const rest = others.slice(2);
+  const sections = Object.entries(SECTIONS)
+    .map(([key, label]) => ({ key, label, stories: rest.filter((s) => s.data.section === key) }))
+    .filter((s) => s.stories.length);
+  return { lead, seconds: others.slice(0, 2), sections };
+}

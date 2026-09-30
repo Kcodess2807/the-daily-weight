@@ -1,0 +1,18 @@
+---
+import Edition from '../layouts/Edition.astro';
+import { getEditions, longDate, plural } from '../editions';
+const editions = await getEditions();
+---
+<Edition title="Archive — The Daily Weight" edition={editions[0]}>
+  <section class="section">
+    <h2>Archive</h2>
+    <ul class="archive">
+      {editions.map((e) => (
+        <li>
+          <a href={`/edition/${e.date}`}>{longDate(e.date)}</a>
+          <span>{plural(e.stories.length)}</span>
+        </li>
+      ))}
+    </ul>
+  </section>
+</Edition>

@@ -1,0 +1,10 @@
+---
+import Edition from '../../layouts/Edition.astro';
+import { getEditions, longDate, type Edition as E } from '../../editions';
+
+export async function getStaticPaths() {
+  return (await getEditions()).map((edition) => ({ params: { date: edition.date }, props: { edition } }));
+}
+const { edition } = Astro.props as { edition: E };
+---
+<Edition title={`${longDate(edition.date)} — The Daily Weight`} edition={edition} front />
