@@ -200,7 +200,7 @@ async function openEdition(date) {
     message = `Loading ${longDate(date)}…`; render();
     edition = await loadEdition(date);
     listAt = 0; listTop = 0; readerTop = 0; message = '';
-    buildTree(); readSoon(); render();
+    buildTree(); readSoon(); loadHnMeta(edition.stories); render();
   } catch (e) { message = `Couldn't load that edition: ${e.message}`; render(); }
 }
 
@@ -268,6 +268,193 @@ const storyText = (s) => [
 
 // ---------- rendering ----------
 
+// ---------- story details: the full article and the Hacker News discussion ----------
+
+let tab = 'story';                  // what the article panel shows: 'story' | 'article' | 'discussion'
+const TABS = [['story', 'Story'], ['article', 'Article'], ['discussion', 'Discussion']];
+const pending = new Set();          // in-flight fetches; snapshots wait for them
+const articles = new Map();         // source url -> { status, blocks?, title?, error? }
+const threads = new Map();          // HN id -> { status, item?, error? }
+const hnMeta = new Map();           // HN id -> { points, comments }
+
+const UA = { 'User-Agent': 'Mozilla/5.0 (compatible; TheDailyWeight/0.2; terminal reader)' };
+const hnId = (s) => s?.discuss_url?.match(/news\.ycombinator\.com\/item\?id=(\d+)/)?.[1];
+const track = (p) => { pending.add(p); p.finally(() => { pending.delete(p); render(); }); return p; };
+const fetchOk = async (url) => {
+  const res = await fetch(url, { headers: UA, signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`the site answered ${res.status}`);
+  return res;
+};
+const why = (e) => (e.name === 'TimeoutError' ? 'it took too long to answer' : e.message);
+
+const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', mdash: '—', ndash: '–', hellip: '…',
+  rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', middot: '·', copy: '©' };
+const decode = (s) => s.replace(/&(#x[\da-f]+|#\d+|\w+);/gi, (m, e) => {
+  if (e[0] !== '#') return NAMED[e.toLowerCase()] ?? m;
+  try { return String.fromCodePoint(/^#x/i.test(e) ? parseInt(e.slice(2), 16) : Number(e.slice(1))); } catch { return m; }
+});
+// HTML fragment to plain text with paragraph breaks kept.
+const htmlText = (html = '') => decode(html
+  .replace(/<\s*(br)\s*\/?>/gi, '\n').replace(/<\/?\s*p\b[^>]*>/gi, '\n\n').replace(/<[^>]+>/g, ''))
+  .replace(/[ \t]+/g, ' ').replace(/\n[ \t]+/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+
+// Readable text from an article page: the <article> (or <main>) without navigation, scripts and
+// page furniture, as headings, paragraphs, list items, quotes and code. Deliberately simple.
+function extractArticle(html) {
+  const h = html.replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<(script|style|noscript|svg|nav|header|footer|aside|form|iframe|button|select|template)\b[\s\S]*?<\/\1\s*>/gi, '');
+  const scope = h.match(/<article\b[^>]*>([\s\S]*)<\/article>/i)?.[1] ?? h.match(/<main\b[^>]*>([\s\S]*)<\/main>/i)?.[1]
+    ?? h.match(/<body\b[^>]*>([\s\S]*)<\/body>/i)?.[1] ?? h;
+  const blocks = [];
+  for (const m of scope.matchAll(/<(h[1-4]|p|li|pre|blockquote)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi)) {
+    const tag = m[1].toLowerCase();
+    const text = tag === 'pre'
+      ? decode(m[2].replace(/<[^>]+>/g, '')).replace(/\s+$/, '')
+      : decode(m[2].replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+    if (!text || (tag === 'p' && text.length < 30 && !/[.!?:]$/.test(text))) continue;
+    if (blocks.at(-1)?.text === text) continue;
+    blocks.push({ tag, text });
+    if (blocks.length >= 400) break;
+  }
+  return blocks;
+}
+
+function loadArticle(s) {
+  if (!s || articles.has(s.url)) return;
+  articles.set(s.url, { status: 'loading' });
+  track(fetchOk(s.url).then(async (res) => {
+    const type = res.headers.get('content-type') ?? '';
+    if (type.includes('pdf')) throw new Error("it's a PDF");
+    if (!type.includes('html')) throw new Error(`it isn't a web page (${type.split(';')[0] || 'unknown type'})`);
+    const html = await res.text();
+    const blocks = extractArticle(html);
+    if (!blocks.length) throw new Error('no readable text was found on the page');
+    articles.set(s.url, { status: 'ok', blocks, title: decode(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '').trim() });
+  }).catch((e) => articles.set(s.url, { status: 'error', error: why(e) })));
+}
+
+const countComments = (node) => (node.children ?? []).reduce((n, c) => n + (c.text ? 1 : 0) + countComments(c), 0);
+
+function loadThread(s) {
+  const id = hnId(s);
+  if (!id || threads.has(id)) return;
+  threads.set(id, { status: 'loading' });
+  track(fetchOk(`https://hn.algolia.com/api/v1/items/${id}`).then((r) => r.json()).then((item) => {
+    threads.set(id, { status: 'ok', item });
+    hnMeta.set(id, { points: item.points ?? 0, comments: countComments(item) });
+  }).catch((e) => threads.set(id, { status: 'error', error: why(e) })));
+}
+
+// Points and comment counts for every HN-discussed story in the edition, in one request.
+function loadHnMeta(list) {
+  const ids = [...new Set(list.map(hnId).filter((id) => id && !hnMeta.has(id)))];
+  if (!ids.length) return;
+  track(fetchOk(`https://hn.algolia.com/api/v1/search?hitsPerPage=${ids.length}&tags=story,(${ids.map((i) => `story_${i}`).join(',')})`)
+    .then((r) => r.json())
+    .then(({ hits }) => { for (const h of hits) hnMeta.set(h.objectID, { points: h.points ?? 0, comments: h.num_comments ?? 0 }); })
+    .catch(() => {}));
+}
+
+function ensureDetails() {
+  const s = current();
+  if (tab === 'article') loadArticle(s);
+  if (tab === 'discussion') loadThread(s);
+}
+
+const compact = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
+function ago(iso) {
+  const min = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+  return min < 60 ? `${min}m ago` : min < 1440 ? `${Math.round(min / 60)}h ago` : `${Math.round(min / 1440)}d ago`;
+}
+
+function tabBar(w) {
+  const pieces = [];
+  TABS.forEach(([key, label], i) => {
+    const on = tab === key;
+    pieces.push([` ${i + 1} ${label} `, on ? bg(...P.lavender) + fg(...P.base) + BOLD : T.muted], [' ']);
+  });
+  const s = current();
+  const busy = (tab === 'article' && articles.get(s?.url)?.status === 'loading')
+    || (tab === 'discussion' && threads.get(hnId(s))?.status === 'loading');
+  if (busy) pieces.push(['  loading…', ITALIC + T.faint]);
+  return line(pieces, w, T.panel);
+}
+
+// The source article, as fetched and cleaned.
+function articleLines(s, w, measure) {
+  const L = (pieces) => line(pieces, w, T.panel);
+  const host = new URL(s.url).hostname.replace(/^www\./, '');
+  const a = articles.get(s.url);
+  const out = [L([]), L([[`From ${host}`, T.accent], [a?.title ? `  ·  ${a.title}` : '', T.muted]]), L([])];
+  if (!a || a.status === 'loading') return [...out, L([[`Fetching the full article from ${host}…`, ITALIC + T.muted]])];
+  if (a.status === 'error') {
+    return [...out, L([[`Couldn't show the article here: ${a.error}.`, T.ink]]), L([]),
+      L([['Press ', T.muted], ['o', BOLD + T.accent], [' to open it in your browser.', T.muted]])];
+  }
+  for (const { tag, text } of a.blocks) {
+    if (tag.startsWith('h')) {
+      if (out.length > 3) out.push(L([]));
+      for (const t of wrap(text, measure)) out.push(L([[t, BOLD + T.accent]]));
+      out.push(L([]));
+    } else if (tag === 'li') {
+      wrap(text, measure - 2).forEach((t, i) => out.push(L([[i ? '  ' : '• ', T.accent], [t, T.ink]])));
+    } else if (tag === 'blockquote') {
+      for (const t of wrap(text, measure - 2)) out.push(L([['▌ ', T.accent], [t, ITALIC + T.ink]]));
+      out.push(L([]));
+    } else if (tag === 'pre') {
+      for (const t of text.split('\n')) out.push(L([[fit(t.replace(/\t/g, '  '), measure), fg(...P.teal)]]));
+      out.push(L([]));
+    } else {
+      for (const t of wrap(text, measure)) out.push(L([[t, T.ink]]));
+      out.push(L([]));
+    }
+  }
+  out.push(L([['Extracted from the source page; formatting is simplified. ', T.faint], ['o', BOLD + T.accent], [' opens the original.', T.faint]]));
+  return [...out, L([])];
+}
+
+// The Hacker News thread, threaded with guides, up to 80 comments.
+function discussionLines(s, w, measure) {
+  const L = (pieces) => line(pieces, w, T.panel);
+  const id = hnId(s);
+  const out = [L([])];
+  if (!id) {
+    out.push(L([['No Hacker News thread for this story.', T.ink]]));
+    if (s.discuss_url) out.push(L([]), L([['Discussion: ', T.muted], [s.discuss_url, fg(...P.blue), s.discuss_url]]), L([['Press ', T.muted], ['d', BOLD + T.accent], [' to open it.', T.muted]]));
+    return out;
+  }
+  const t = threads.get(id);
+  if (!t || t.status === 'loading') return [...out, L([['Loading the Hacker News thread…', ITALIC + T.muted]])];
+  if (t.status === 'error') return [...out, L([[`Couldn't load the thread: ${t.error}. Press d to open it.`, T.ink]])];
+
+  const total = countComments(t.item);
+  const LIMIT = 80;
+  out.push(L([['Hacker News', BOLD + fg(...P.peach)], [`  ·  ▲ ${t.item.points ?? 0} points  ·  ${total} comments`, T.muted],
+    [total > LIMIT ? `  ·  first ${LIMIT} shown` : '', T.faint]]));
+  out.push(L([[t.item.title ?? '', T.faint]]), L([]));
+  let shown = 0;
+  const walk = (node, depth) => {
+    for (const c of node.children ?? []) {
+      if (shown >= LIMIT) return;
+      if (!c.text) { walk(c, depth); continue; }
+      shown++;
+      const d = Math.min(depth, 5);
+      const guide = [['  '.repeat(Math.max(0, d - 1))], [d ? '│ ' : '', T.rule]];
+      const room = measure - width('  '.repeat(Math.max(0, d - 1))) - (d ? 2 : 0);
+      out.push(L([...guide, [c.author ?? '[deleted]', BOLD + T.accent], [`  ${ago(c.created_at)}`, T.faint]]));
+      htmlText(c.text).split(/\n\s*\n/).forEach((para, i) => {
+        if (i) out.push(L([...guide]));
+        for (const t of wrap(para, Math.max(20, room))) out.push(L([...guide, [t, T.ink]]));
+      });
+      out.push(L([...guide]));
+      walk(c, depth + 1);
+    }
+  };
+  walk(t.item, 0);
+  out.push(L([['Press ', T.faint], ['d', BOLD + T.accent], [' to read the whole thread on Hacker News.', T.faint]]), L([]));
+  return out;
+}
+
 const readingMinutes = (s) => Math.max(1, Math.round(`${s.why_read} ${s.body ?? ''}`.split(/\s+/).length / 220));
 
 // Age of a story relative to today, eilmeldung-style: "new", "3d", "2w".
@@ -288,6 +475,8 @@ function readerLines(s, w) {
   if (showHelp) return helpLines(w);
   if (!s) return [line([], w, B), line([['Nothing in this view.', T.muted]], w, B)];
   const measure = Math.min(w, 104);
+  if (tab === 'article') return articleLines(s, w, measure);
+  if (tab === 'discussion') return discussionLines(s, w, measure);
   const L = (pieces) => line(pieces, w, B);
   const tags = [...pill(s.section, SECTIONS[s.section].toLowerCase(), B)];
   for (const src of s.sources) tags.push(...pill(src, SOURCES[src].toLowerCase(), B));
@@ -301,6 +490,14 @@ function readerLines(s, w) {
     L(tags),
     L([]),
   ];
+  // Detail line: how the editor ranked it, reading time, and live HN numbers when there's a thread.
+  const meta = hnMeta.get(hnId(s));
+  out.splice(out.length - 1, 0, L([
+    ['Interest ', T.faint], [`${s.interest_score}/10`, BOLD + T.ink], ['   ·   ', T.faint],
+    [`${readingMinutes(s)} min read`, T.ink],
+    ...(meta ? [['   ·   ', T.faint], [`▲ ${meta.points}`, BOLD + fg(...P.peach)], [' points on HN, ', T.muted],
+      [`${meta.comments}`, BOLD + T.ink], [' comments', T.muted], ['  (press 3)', T.faint]] : []),
+  ]));
   const why = wrap(`Why read  ${s.why_read}`, measure);
   why.forEach((t, i) => out.push(L(i === 0 ? [['Why read', BOLD + T.accent], [t.slice(8), ITALIC + T.ink]] : [[t, ITALIC + T.ink]])));
   out.push(L([]));
@@ -323,6 +520,7 @@ function helpLines(w) {
     ['j / k, ↓ / ↑', 'move (scrolls when the article has focus)'], ['J / K, n / p', 'next / previous story, from any pane'],
     ['tab, h / l', 'switch pane'], ['enter', 'read the story (or open the sidebar item)'],
     ['/', 'search this view; enter keeps it, esc clears it'],
+    ['1 / 2 / 3, t', 'our story / the full source article / the Hacker News thread'],
     ['esc', 'back to the list'], ['space / b', 'page the article down / up'], ['g / G', 'top / bottom'],
     ['o', 'open the source in your browser'], ['d', 'open the discussion'], ['w', 'open the story on the website'],
     ['c', 'copy the story as text'], ['u', 'copy the source link'], ['m', 'mark / unmark'],
@@ -381,7 +579,8 @@ function listLines(list, iw, ih) {
     return line([
       ['  '], [unread ? '●' : '○', selected ? '' : unread ? T.accent : T.faint], ['   '],
       ['■', selected ? '' : fg(...CHIP[s.section])], [' '], [mark, selected ? '' : markStyle], ['   '],
-      [age(s.date).padStart(3), selected ? '' : T.muted], ['   '],
+      [age(s.date).padStart(3), selected ? '' : T.muted], ['  '],
+      [(hnMeta.has(hnId(s)) ? `▲${compact(hnMeta.get(hnId(s)).points)}` : '').padStart(5), selected ? '' : fg(...P.peach)], ['   '],
       [s.title, BOLD + (selected ? '' : unread ? T.ink : T.muted)],
     ], iw, base);
   });
@@ -407,7 +606,9 @@ function panel(lines, w, h, scroll) {
 }
 
 function render() {
-  if (!SNAPSHOT) process.stdout.write(frame());
+  if (SNAPSHOT) return;
+  ensureDetails();
+  process.stdout.write(frame());
 }
 
 function frame() {
@@ -429,10 +630,13 @@ function frame() {
   const right = [paneHeader(RW, focus === 1, label), ...listLines(list, RW, LH - 1)];
   while (right.length < LH) right.push(line([], RW, T.pane));
 
+  // The article panel: a fixed tab bar (Story · Article · Discussion), then the scrolling content.
   const article = readerLines(s, RW - 6);
-  const AI = AH - 2;
+  const AI = AH - 3;
   readerTop = Math.max(0, Math.min(readerTop, Math.max(0, article.length - AI)));
-  right.push(...panel(article.slice(readerTop, readerTop + AI), RW, AH, { top: readerTop, total: article.length }));
+  const head = showHelp ? [] : [tabBar(RW - 6)];
+  right.push(...panel([...head, ...article.slice(readerTop, readerTop + AI + (showHelp ? 1 : 0))], RW, AH,
+    { top: readerTop, total: article.length + head.length }));
 
   // Status bar: the story's link on the left (as eilmeldung shows it), position and hints on the right.
   let status;
@@ -441,7 +645,7 @@ function frame() {
     status = line([[fit(` / ${query}▏`, W - width(hint))], [hint]], W, T.search);
   } else {
     const hints = ['enter open · / search · ? keys · q quit', 'enter read · J/K next · o open · c copy · ? keys',
-      'j/k scroll · space page · J/K next · esc back · ? keys'][focus];
+      'j/k scroll · 1 2 3 story/article/discussion · J/K next · esc back · ? keys'][focus];
     const pct = article.length > AI ? `${Math.round(((readerTop + AI) / article.length) * 100)}%` : '';
     const where = [list.length ? `${listAt + 1}/${list.length}` : '', pct, hints].filter(Boolean).join('  ·  ');
     status = line([[fit(` ${message || s?.url || ''}`, W - width(where) - 2)], [` ${where} `]], W, T.statusBar);
@@ -503,6 +707,8 @@ function onKey(str, key = {}) {
       focus = 1; break;
     case 'J': case 'n': step(1); break;
     case 'K': case 'p': step(-1); break;
+    case '1': case '2': case '3': tab = TABS[k - 1][0]; readerTop = 0; showHelp = false; break;
+    case 't': tab = TABS[(TABS.findIndex(([key]) => key === tab) + 1) % TABS.length][0]; readerTop = 0; showHelp = false; break;
     case '/': searching = true; showHelp = false; if (focus === 0) focus = 1; break;
     case 'space': case 'pagedown': readerTop += page; break;
     case 'b': case 'pageup': readerTop = Math.max(0, readerTop - page); break;
@@ -544,7 +750,12 @@ async function snapshot() {
     await new Promise((r) => setTimeout(r, 0)); // let edition loads finish
     while (message.startsWith('Loading')) await new Promise((r) => setTimeout(r, 20));
   }
+  // Let article and thread fetches land (up to 20s) so the snapshot shows real content.
+  ensureDetails();
+  const deadline = Date.now() + 20000;
+  while (pending.size && Date.now() < deadline) await Promise.race([Promise.allSettled([...pending]), new Promise((r) => setTimeout(r, 500))]);
   process.stdout.write(frame().replace(`${ESC}H`, '') + '\n');
+  process.exit(0);
 }
 
 async function main() {

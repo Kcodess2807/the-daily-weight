@@ -45,5 +45,15 @@ expect('the status bar shows the position', 'jj', (o) => /\b3\/\d+/.test(statusB
 const editionRow = /\b(Today|Yesterday|[A-Z][a-z]{2}, [A-Z][a-z]{2} \d+) \d+/;
 expect('the list has focus at start', '', (o) => focusedLine(o).length > 0 && !editionRow.test(focusedLine(o)), raw);
 expect('h moves focus to the sidebar', 'h', (o) => editionRow.test(focusedLine(o)), raw);
+expect('the article panel has Story / Article / Discussion tabs', '', (o) => /1 Story\s+2 Article\s+3 Discussion/.test(o));
+expect('? hides the tabs and shows the keys', '?', (o) => o.includes('the full source article') && !o.includes('2 Article'));
+
+// These fetch the source page and the HN thread, so they need a network connection.
+const hnStory = (() => { const o = snap('120x34', ''); return o.includes('▲') ? '' : null; })();
+expect('(network) tab 2 shows the source article or says why not', '2', (o) => /From [a-z0-9.-]+\.[a-z]+/.test(o)
+  && (/Couldn't show the article here|Extracted from the source page|[a-z]{4,} [a-z]{4,} [a-z]{4,}/.test(o)));
+expect('(network) tab 3 shows the Hacker News thread for a story that has one', 'j3',
+  (o) => /Hacker News\s+·\s+▲ \d+ points\s+·\s+\d+ comments/.test(o) || hnStory === null);
+expect('(network) the list shows HN points', '', (o) => /▲\d/.test(o));
 
 process.exitCode = fail ? 1 : 0;

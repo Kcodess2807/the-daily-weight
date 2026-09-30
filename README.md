@@ -34,6 +34,7 @@ A three-pane reader in the style of [eilmeldung](https://www.reddit.com/r/CLI/co
 | `j`/`k` or arrows | move (scrolls when the article has focus) |
 | `J`/`K` or `n`/`p` | next / previous story, from any pane |
 | `/` | search the current view as you type; `enter` keeps it, `esc` clears it |
+| `1` / `2` / `3`, `t` | article tabs: our story, the full source article, the Hacker News thread |
 | `tab`, `h`/`l` | switch pane (the focused pane's header turns lavender) |
 | `enter` | read the story, or open the sidebar item (editions load on enter) |
 | `space`/`b`, `g`/`G` | page the article, jump to top/bottom |
@@ -41,6 +42,8 @@ A three-pane reader in the style of [eilmeldung](https://www.reddit.com/r/CLI/co
 | `c` / `u` | copy the story as text / copy the source link |
 | `m` / `r` / `R` | mark, toggle read, mark all in view read |
 | `?` / `q` | keys / quit |
+
+The article panel has three tabs. **Story** is our write-up with its interest score, reading time and live HN points and comment count. **Article** fetches the original page and shows it as clean text (headings, paragraphs, lists, quotes, code), including GitHub READMEs and arXiv abstracts; sites that refuse automated readers (openai.com returns 403) say so and `o` opens them in the browser. **Discussion** shows the Hacker News thread from its public API: up to 80 comments, threaded, with authors and times. The story list also shows each story's HN points.
 
 A story counts as read after it has been on screen for a moment or when you open it, not when you scroll past it. Links in the article are clickable in terminals that support it (Windows Terminal, iTerm2, kitty, GNOME Terminal). Terminals without 24-bit colour get the nearest 256-colour match. Read and marked stories are remembered in `~/.daily-weight.json`. The reader uses `/editions.json` and `/edition/<date>.json`, which any other client can use too. `npm run check:tui` checks its layout at several terminal sizes.
 
