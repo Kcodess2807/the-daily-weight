@@ -17,6 +17,6 @@ image_source: "https://commons.wikimedia.org/wiki/File:Shipping_container_-_Port
 sample: false
 ---
 
-"DeepSeek Elastic Compute (DSec)" describes the sandbox infrastructure DeepSeek uses for agentic training. Each production unit is about 160 nodes.
+"DeepSeek Elastic Compute (DSec)", from 131 authors at DeepSeek-AI and Tsinghua University, describes the sandbox infrastructure DeepSeek uses for agentic RL. One scheduler runs function calls, containers, microVMs and full VMs, and the system is co-designed with the RL training framework.
 
-The paper reports about 3 million sandboxes a day, more than 380,000 running concurrently, and over 5,000 sandbox creations per second. It was submitted September 19 and discussed widely on Hacker News on September 26.
+"A single production-scale unit of DSec spans around 160 nodes, serving about 3 million sandboxes per day," the paper says; in production it supports more than 380,000 concurrent sandboxes and over 5,000 creations per second. It was submitted September 19 and discussed widely on Hacker News on September 26.

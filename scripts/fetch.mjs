@@ -2,8 +2,12 @@
 // No dependencies: Node 18+ fetch and a few regexes. Picking and writing stories is the editor's job
 // (see scripts/editor-prompt.md, run by `npm run edition`).
 //
-//   node scripts/fetch.mjs              today's date, last 36 hours
-//   node scripts/fetch.mjs 2026-10-01   a specific edition date
+//   node scripts/fetch.mjs                  today's date, last 36 hours
+//   node scripts/fetch.mjs 2026-10-01       a specific edition date
+//   node scripts/fetch.mjs 2026-09-29 168   a wider window in hours (catch-up or launch issues)
+//
+// For past dates, sources that only show "right now" (GitHub Trending, Reddit's top of the day)
+// are skipped, since they'd describe today rather than that edition.
 //
 // Not covered: X/Twitter. Its API needs a paid key and the free mirrors are gone; the editor
 // prompt asks Claude to web-search for anything big that broke there.
@@ -13,7 +17,9 @@ import { execSync } from 'node:child_process';
 
 const date = process.argv[2] ?? new Date().toISOString().slice(0, 10);
 const until = new Date(`${date}T12:00:00Z`).getTime(); // editions go out around midday UTC
-const since = until - 36 * 3600 * 1000;
+const hours = Number(process.argv[3] ?? 36);
+const since = until - hours * 3600 * 1000;
+const isPast = Date.now() - until > 24 * 3600 * 1000;
 const UA = { 'User-Agent': 'Mozilla/5.0 (compatible; TheDailyWeight/0.2; daily AI news digest)' };
 
 // Lab and company blogs. Anthropic has no feed, so it comes from its sitemap below.
@@ -121,8 +127,10 @@ async function hn() {
   const { hits } = await get(url);
   // AI-looking stories from 10 points up (smaller launches, Show HNs and incident reports live
   // at 10-40), plus every front-page-sized story (150+) flagged ai_match: false, so a headline
-  // that never says "AI" still reaches the editor.
-  return hits.filter((h) => isAI(h.title, h.url) || h.points >= 150).map((h) => ({
+  // that never says "AI" still reaches the editor. The bar scales with the window so a week-long
+  // catch-up doesn't drown the editor in every non-AI front-page story of the week.
+  const bigStory = 150 * Math.max(1, hours / 36);
+  return hits.filter((h) => isAI(h.title, h.url) || h.points >= bigStory).map((h) => ({
     source: 'hn', title: h.title, url: h.url ?? `https://news.ycombinator.com/item?id=${h.objectID}`,
     discuss_url: `https://news.ycombinator.com/item?id=${h.objectID}`,
     published: h.created_at, points: h.points, comments: h.num_comments, ai_match: isAI(h.title, h.url),
@@ -132,7 +140,9 @@ async function hn() {
 // Reddit blocks unauthenticated JSON and rate-limits RSS hard, so fetch every subreddit
 // in one combined "top of the day" feed; its order stands in for score.
 async function reddit() {
-  const items = await feed(`https://www.reddit.com/r/${SUBREDDITS.join('+')}/top/.rss?t=day&limit=60`);
+  // Wider or past windows read the week's top list; feed() keeps only posts inside the window.
+  const period = isPast || hours > 36 ? 'week' : 'day';
+  const items = await feed(`https://www.reddit.com/r/${SUBREDDITS.join('+')}/top/.rss?t=${period}&limit=100`);
   return items.map((i, rank) => ({ source: 'reddit', subreddit: i.subreddit, rank: rank + 1, ...i, discuss_url: i.url }));
 }
 
@@ -145,7 +155,8 @@ async function lobsters() {
 
 // arXiv via Hugging Face daily papers: community-upvoted, so it's the signal, not the firehose.
 async function papers() {
-  const days = [date, new Date(until - 86400000).toISOString().slice(0, 10)];
+  const days = [];
+  for (let t = until; t > since - 86400000; t -= 86400000) days.push(new Date(t).toISOString().slice(0, 10));
   const seen = new Map();
   for (const d of days) {
     for (const p of await get(`https://huggingface.co/api/daily_papers?date=${d}`)) seen.set(p.paper.id, p);
@@ -176,7 +187,7 @@ async function github() {
   out.push(...releases.flat());
 
   // ponytail: scrapes github.com/trending HTML (no API exists); breaks if GitHub changes markup
-  for (const since of ['daily', 'weekly']) {
+  for (const since of isPast ? [] : ['daily', 'weekly']) { // trending only describes today
     const html = await get(`https://github.com/trending?since=${since}`, 'text');
     for (const row of html.split('<article class="Box-row">').slice(1)) {
       const repo = row.match(/<h2[^>]*>\s*<a[^>]*href="\/([^"]+)"/)?.[1];
@@ -190,10 +201,11 @@ async function github() {
   }
 
   // New this week and already past 100 stars. Search allows 10 requests/minute anonymously.
-  const week = new Date(until - 7 * 86400000).toISOString().slice(0, 10);
+  const from = new Date(Math.min(since, until - 7 * 86400000)).toISOString().slice(0, 10);
+  const to = new Date(until).toISOString().slice(0, 10);
   for (const term of ['llm', 'agent', 'mcp', 'model', 'inference']) {
     const { items = [] } = await api(`/search/repositories?sort=stars&order=desc&per_page=15&q=${
-      encodeURIComponent(`created:>=${week} stars:>=100 ${term} in:name,description,topics`)}`);
+      encodeURIComponent(`created:${from}..${to} stars:>=100 ${term} in:name,description,topics`)}`);
     out.push(...items.map((r) => ({ source: 'github', kind: 'new-repo', repo: r.full_name, title: `New: ${r.full_name}`,
       url: r.html_url, published: r.created_at, stars: r.stargazers_count, blurb: r.description ?? '' })));
   }

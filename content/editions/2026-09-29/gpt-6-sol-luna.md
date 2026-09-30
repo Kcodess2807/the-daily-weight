@@ -9,14 +9,16 @@ section: models
 interest_score: 8
 recommended: true
 must_read: false
-why_read: "A two-model split, one for complex work and one for clerical tasks, with API prices cut in half."
-summary: "GPT-6 Sol for complex work and Luna for extraction and summarisation, both 50% cheaper than the 5.6 series."
+why_read: "A two-model split, one for complex work and one for clerical tasks, with API prices cut in half on launch day with Opus 5.5."
+summary: "GPT-6 Sol at $2/$10 and Luna at $0.10/$0.50 per million tokens, 50% below the GPT-5.6 versions."
 image: "/images/gpt-6-sol-luna.jpg"
 image_credit: "NASA / Wikimedia Commons, Public domain"
 image_source: "https://commons.wikimedia.org/wiki/File:Solar_eclipse_taken_from_Artemis_II_-_April_2026.jpg"
 sample: false
 ---
 
-OpenAI released GPT-6 Sol and GPT-6 Luna on September 22, about 90 minutes after Anthropic's Opus 5.5. TechCrunch reports API prices are 50% lower than the 5.6 series, which OpenAI attributes to better caching and inference.
+OpenAI released GPT-6 Sol and GPT-6 Luna on September 22, about 90 minutes after Anthropic's Opus 5.5. Sol costs $2 per million input tokens and $10 per million output; Luna $0.10 and $0.50. The Next Web and VentureBeat report those prices are 50% below the GPT-5.6 versions.
 
-Sol targets complex work such as coding; Luna targets clerical tasks like summarising and extraction. OpenAI says Sol makes about half as many factual mistakes as its predecessor. Luna is also available to Free and Go users.
+Sol targets complex work such as coding, with 68.8% on DeepSWE and 60.5% on OSWorld at its highest effort setting; Luna, aimed at summarising and extraction, scores 66.6% on DeepSWE. OpenAI says Sol makes about half as many mistakes as GPT-5.6 Sol on a factuality test built from deliberately error-prone conversations, which it notes does not represent ordinary use.
+
+Both models are in ChatGPT Work and Codex for paid plans, and Luna reaches Free and Go users through the desktop app. Simon Willison's [write-up](https://simonwillison.net/2026/Sep/22/opus-and-sol-and-luna/) compares the two launches.

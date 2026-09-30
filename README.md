@@ -39,6 +39,16 @@ This does two things:
 
 Read the new edition before publishing. The editor is told to drop anything it can't verify, but a human pass is still the last check.
 
+To rebuild a past edition, fetch its window and point the editor at it, e.g. for a week-long catch-up issue:
+
+```sh
+node scripts/fetch.mjs 2026-09-29 180
+claude -p "Follow scripts/editor-prompt.md for the edition dated 2026-09-29, using drafts/2026-09-29.json" \
+  --allowedTools "Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Bash(node scripts/images.mjs:*),Bash(node scripts/drop.mjs:*),Bash(npm run build)"
+```
+
+The editor keeps an existing edition's stories that still hold up and removes the rest with `scripts/drop.mjs`.
+
 `npm run fetch` runs step 1 on its own; pass a date (`node scripts/fetch.mjs 2026-10-01`) to build a past or future edition window.
 
 ## Add a story by hand
