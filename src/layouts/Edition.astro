@@ -9,6 +9,7 @@ import { filterAttrs, frontPage, getEditions, href, longDate, plural, type Editi
 interface Props { title: string; edition: Edition; front?: boolean }
 const { title, edition, front = false } = Astro.props;
 const { lead, seconds, sections } = frontPage(edition);
+const RAIL = 12; // the headline rail lists the top stories; more makes the top block taller than the lead
 const otherEditions = (await getEditions()).filter((e) => e.date !== edition.date).slice(0, 6);
 ---
 <!doctype html>
@@ -40,10 +41,13 @@ const otherEditions = (await getEditions()).filter((e) => e.date !== edition.dat
               )}
               <aside class="rail">
                 <h2>Today's headlines</h2>
-                <ol>{edition.stories.map((s) => <li {...filterAttrs(s)}><a href={href(s)}>{s.data.title}</a></li>)}</ol>
+                <ol>{edition.stories.slice(0, RAIL).map((s) => <li {...filterAttrs(s)}><a href={href(s)}>{s.data.title}</a></li>)}</ol>
+                {edition.stories.length > RAIL && (
+                  <a class="all" href="#sections">{edition.stories.length - RAIL} more stories in the sections below ›</a>
+                )}
               </aside>
             </section>
-            <div class="desk">
+            <div class="desk" id="sections">
               {sections.map((sec) => (
                 <section class="section" id={sec.key} aria-labelledby={`h-${sec.key}`}>
                   <h2 id={`h-${sec.key}`}>{sec.label}</h2>
@@ -79,7 +83,12 @@ const otherEditions = (await getEditions()).filter((e) => e.date !== edition.dat
           <a href="/json">JSON</a>
           <a href="/txt">Text</a>
         </nav>
-        <p class="cli">In a terminal: <code>curl -s {new URL('/txt', Astro.site)}</code></p>
+        <p class="cli">
+          In a terminal: <code data-cli>curl -s {new URL('/txt', Astro.site)}</code>
+          <small>(Windows PowerShell: use <code>curl.exe</code>)</small>
+        </p>
+        <!-- Show the address the reader is actually on; the build only knows the configured site. -->
+        <script is:inline>document.querySelector('[data-cli]').textContent = 'curl -s ' + location.origin + '/txt';</script>
         <p>One edition a day on models, agents, infra, research and safety. The paper ends when you reach the bottom.</p>
       </footer>
     </div>

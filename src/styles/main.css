@@ -330,7 +330,7 @@ p { margin: 0 0 0.8em; }
 .editions li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .editions li a { font: 700 1rem/1.3 var(--display); }
 .editions li span { font: 400 0.82rem/1 var(--ui); color: var(--muted); white-space: nowrap; }
-.editions .all { display: inline-block; margin-top: 12px; font: 700 0.9rem/1 var(--ui); color: var(--accent); }
+.editions .all, .rail .all { display: inline-block; margin-top: 12px; font: 700 0.9rem/1 var(--ui); color: var(--accent); }
 
 /* Story page */
 .crumbs { margin-bottom: 10px; font: 400 0.85rem/1.4 var(--ui); color: var(--muted); }
@@ -362,3 +362,5 @@ p { margin: 0 0 0.8em; }
   color: var(--ink);
   user-select: all; /* one click selects the whole command */
 }
+.cli small { display: block; margin-top: 4px; font-size: 0.8rem; }
+.cli small code { padding: 0 4px; user-select: auto; }

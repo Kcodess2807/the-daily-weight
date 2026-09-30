@@ -1,6 +1,6 @@
 ---
 date: "2026-09-30"
-title: "OpenAI adds a $500 Pro tier and an Ultrafast API speed tier"
+title: "ChatGPT Pro 500 adds an Ultrafast tier as Pro 200 usage is halved"
 authors: ["OpenAI"]
 url: "https://help.openai.com/en/articles/9793128-about-chatgpt-pro-tiers"
 discuss_url: "https://news.ycombinator.com/item?id=49896975"
@@ -9,14 +9,16 @@ section: industry
 interest_score: 7
 recommended: true
 must_read: false
-why_read: "Pricing now separates by speed as well as by model. Existing Pro 200 allowances were cut in the same announcement."
-summary: "Pro 500 at $500/month, Pro 200 allowances halved, and service_tier \"ultrafast\" for GPT-6 Astra in the API."
+why_read: "A clear signal on what heavy agentic use actually costs to serve. The Ultrafast pricing multiple matters more than the plan name."
+summary: "A new $500 Pro tier is the only one with Ultrafast; from October 30 Pro 200's Codex and Work allowance falls from 20x to 10x Plus."
 image: "/images/openai-pro-500-ultrafast.jpg"
-image_credit: "James Emmans / Wikimedia Commons, CC BY-SA 2.0"
-image_source: "https://commons.wikimedia.org/wiki/File:Kempton_Park_Synthetic_Race_Track_-_geograph.org.uk_-_4058187.jpg"
+image_credit: "Kabelleger / David Gubler (http://www.bahnbilder.ch) / Wikimedia Commons, CC BY-SA 3.0"
+image_source: "https://commons.wikimedia.org/wiki/File:SNCF_TGV_Duplex_Viaduc_de_Cize_-_Bolozon.jpg"
 sample: false
 ---
 
-Engadget reports the new Pro 500 plan costs $500 a month, while the existing Pro 200 plan's Codex and Work allowance drops from 20x to 10x Plus, and GPT-6 Pro messages go from 200 to 100 a week. Current subscribers keep their limits for now and receive a one-time credit.
+OpenAI added a $500 a month ChatGPT Pro tier. It is the only plan with Ultrafast, a speed tier that OpenAI says runs up to eight times faster in Codex and six times faster in the API. The Next Web and Engadget report that Ultrafast costs six times standard API pricing. It is live for GPT-6 Astra on Pro 500 and Enterprise.
 
-In the API, Ultrafast is requested with `service_tier: "ultrafast"`. OpenAI's docs list it for GPT-6 Astra for all API users, with US and global processing only and no EU data residency. VentureBeat reports up to 300 tokens per second at six times the standard rate; other coverage gives a lower speed, so treat the throughput figure as provisional.
+At the same time the $200 tier shrinks. The Next Web quotes the help page: from October 30, Pro 200's included usage in ChatGPT Work and Codex falls from 20 times to 10 times the Plus allowance, and weekly GPT-6 Pro messages drop from 200 to 100. The Next Web says existing subscribers keep current limits through October 29 and get a one-time $2,500 usage credit that expires December 31. OpenAI has not published Pro 500's usage multiple.
+
+On HN the most-repeated complaints were that the change is a quiet price rise and that OpenAI publishes no concrete limits. On Reddit, several users reported using up a week of Pro 500 allowance within hours of Ultrafast use.

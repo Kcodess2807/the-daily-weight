@@ -9,6 +9,7 @@
 // prompt asks Claude to web-search for anything big that broke there.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 
 const date = process.argv[2] ?? new Date().toISOString().slice(0, 10);
 const until = new Date(`${date}T12:00:00Z`).getTime(); // editions go out around midday UTC
@@ -30,12 +31,27 @@ const PRESS_FEEDS = {
   'Simon Willison': { url: 'https://simonwillison.net/atom/everything/', aiOnly: true },
 };
 const SUBREDDITS = ['LocalLLaMA', 'MachineLearning', 'OpenAI', 'ClaudeAI'];
-// ponytail: fixed watch list, add repos here as the beat changes
+// Stable releases from these repos are always candidates. ponytail: hand-kept list; add to it as the beat changes.
 const REPOS = [
-  'vllm-project/vllm', 'sgl-project/sglang', 'ggml-org/llama.cpp', 'huggingface/transformers',
-  'ollama/ollama', 'openai/codex', 'anthropics/claude-code', 'google-gemini/gemini-cli',
-  'NVIDIA/TensorRT-LLM', 'pytorch/pytorch',
+  // inference and serving
+  'vllm-project/vllm', 'sgl-project/sglang', 'ggml-org/llama.cpp', 'ollama/ollama', 'NVIDIA/TensorRT-LLM',
+  'huggingface/text-generation-inference', 'ml-explore/mlx', 'ml-explore/mlx-lm', 'exo-explore/exo', 'LMCache/LMCache',
+  // training and kernels
+  'pytorch/pytorch', 'huggingface/transformers', 'unslothai/unsloth', 'axolotl-ai-cloud/axolotl',
+  'Dao-AILab/flash-attention', 'triton-lang/triton', 'deepspeedai/DeepSpeed', 'jax-ml/jax', 'tinygrad/tinygrad',
+  // agents, coding tools, protocols
+  'openai/codex', 'anthropics/claude-code', 'google-gemini/gemini-cli', 'Aider-AI/aider', 'cline/cline',
+  'All-Hands-AI/OpenHands', 'browser-use/browser-use', 'modelcontextprotocol/modelcontextprotocol',
+  'langchain-ai/langgraph', 'stanfordnlp/dspy', 'microsoft/autogen', 'openai/openai-agents-python',
+  // apps
+  'open-webui/open-webui', 'comfyanonymous/ComfyUI',
 ];
+// GitHub allows 60 requests/hour without a token, which the watch list alone would exhaust.
+// Use $GITHUB_TOKEN, or the GitHub CLI's login if it's installed; fall back to anonymous.
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || (() => {
+  try { return execSync('gh auth token', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; }
+})();
+const GH = GITHUB_TOKEN ? { Authorization: `Bearer ${GITHUB_TOKEN}` } : {};
 // A title hint, not a gate: product names change weekly, so the big HN stories go to the editor
 // even when this misses (see hn()). "gpt" has no leading \b so ChatGPT/GPTs match.
 const AI = /gpt|\b(ai|a\.i\.|llms?|ml|machine learning|deep learning|claude|opus|sonnet|haiku|gemini|gemma|openai|anthropic|deepmind|mistral|llama|qwen|deepseek|kimi|glm|grok|xai|jev|codex|copilot|cursor|agents?|agentic|chatbots?|inference|transformers?|diffusion|neural|models?|benchmarks?|evals?|fine-?tun\w*|rlhf|tokens?|gpus?|tpus?|cuda|nvidia|mcp|hugging ?face|robot\w*|facial recognition|face scans?|alignment|interpretability)\b/i;
@@ -52,9 +68,9 @@ const tag = (xml, name) => decode(xml.match(new RegExp(`<${name}[^>]*>([\\s\\S]*
   ?.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ?? '');
 
 // Retries HTTP 429 with backoff; Reddit and Wikimedia both rate-limit bursts.
-async function get(url, as = 'json') {
+async function get(url, as = 'json', headers = {}) {
   for (let attempt = 1; ; attempt++) {
-    const res = await fetch(url, { headers: UA });
+    const res = await fetch(url, { headers: { ...UA, ...headers } });
     if (res.ok) return as === 'json' ? res.json() : res.text();
     if (res.status !== 429 || attempt === 3) throw new Error(`${res.status} ${url}`);
     await sleep(attempt * 6000);
@@ -100,11 +116,12 @@ async function press() {
 }
 
 async function hn() {
-  const url = `https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=300`
-    + `&numericFilters=created_at_i>${since / 1000},created_at_i<${until / 1000},points>40`;
+  const url = `https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=1000`
+    + `&numericFilters=created_at_i>${since / 1000},created_at_i<${until / 1000},points>=10`;
   const { hits } = await get(url);
-  // Keep every AI-looking story, plus every front-page-sized one (150+ points) flagged
-  // ai_match: false, so a headline that never says "AI" still reaches the editor.
+  // AI-looking stories from 10 points up (smaller launches, Show HNs and incident reports live
+  // at 10-40), plus every front-page-sized story (150+) flagged ai_match: false, so a headline
+  // that never says "AI" still reaches the editor.
   return hits.filter((h) => isAI(h.title, h.url) || h.points >= 150).map((h) => ({
     source: 'hn', title: h.title, url: h.url ?? `https://news.ycombinator.com/item?id=${h.objectID}`,
     discuss_url: `https://news.ycombinator.com/item?id=${h.objectID}`,
@@ -143,27 +160,42 @@ async function papers() {
     }));
 }
 
+// GitHub from three angles: releases of the repos the beat depends on, what's trending today and
+// this week, and brand-new AI repos gathering stars. Star counts can be gamed; the editor judges.
 async function github() {
   const out = [];
-  for (const repo of REPOS) {
-    for (const r of await get(`https://api.github.com/repos/${repo}/releases?per_page=5`)) {
+  const api = (path) => get(`https://api.github.com${path}`, 'json', GH);
+
+  const releases = await Promise.all(REPOS.map((repo) => settle(`github ${repo}`, async () =>
+    (await api(`/repos/${repo}/releases?per_page=5`))
       // Skip drafts, pre-releases, nightlies and llama.cpp's per-commit bNNNN builds.
-      if (r.draft || r.prerelease || /nightly|alpha|preview|rc\d*$|^b\d+$/i.test(r.tag_name)) continue;
-      if (!inWindow(Date.parse(r.published_at))) continue;
-      out.push({ source: 'github', repo, title: `${repo} ${r.name || r.tag_name}`, url: r.html_url,
-        published: r.published_at, blurb: (r.body ?? '').slice(0, 800) });
+      .filter((r) => !r.draft && !r.prerelease && !/nightly|alpha|preview|rc\d*$|^b\d+$/i.test(r.tag_name))
+      .filter((r) => inWindow(Date.parse(r.published_at)))
+      .map((r) => ({ source: 'github', kind: 'release', repo, title: `${repo} ${r.name || r.tag_name}`,
+        url: r.html_url, published: r.published_at, blurb: (r.body ?? '').slice(0, 800) })))));
+  out.push(...releases.flat());
+
+  // ponytail: scrapes github.com/trending HTML (no API exists); breaks if GitHub changes markup
+  for (const since of ['daily', 'weekly']) {
+    const html = await get(`https://github.com/trending?since=${since}`, 'text');
+    for (const row of html.split('<article class="Box-row">').slice(1)) {
+      const repo = row.match(/<h2[^>]*>\s*<a[^>]*href="\/([^"]+)"/)?.[1];
+      const about = decode(row.match(/<p class="col-9[^>]*>([\s\S]*?)<\/p>/)?.[1]?.replace(/<[^>]+>/g, '').trim() ?? '');
+      const gained = Number(row.match(/([\d,]+) stars (today|this week)/)?.[1]?.replace(/,/g, '') ?? 0);
+      if (repo && AI.test(`${repo} ${about}`)) {
+        out.push({ source: 'github', kind: `trending-${since}`, repo, title: `Trending (${since}): ${repo}`,
+          url: `https://github.com/${repo}`, published: iso(until), stars_gained: gained, blurb: about });
+      }
     }
   }
-  // ponytail: scrapes github.com/trending HTML (no API exists); breaks if GitHub changes markup
-  const html = await get('https://github.com/trending?since=daily', 'text');
-  for (const row of html.split('<article class="Box-row">').slice(1)) {
-    const repo = row.match(/<h2[^>]*>\s*<a[^>]*href="\/([^"]+)"/)?.[1];
-    const about = decode(row.match(/<p class="col-9[^>]*>([\s\S]*?)<\/p>/)?.[1]?.replace(/<[^>]+>/g, '').trim() ?? '');
-    const today = row.match(/([\d,]+) stars today/)?.[1];
-    if (repo && AI.test(`${repo} ${about}`)) {
-      out.push({ source: 'github', repo, title: `Trending: ${repo}`, url: `https://github.com/${repo}`,
-        published: iso(until), stars_today: Number(today?.replace(/,/g, '') ?? 0), blurb: about });
-    }
+
+  // New this week and already past 100 stars. Search allows 10 requests/minute anonymously.
+  const week = new Date(until - 7 * 86400000).toISOString().slice(0, 10);
+  for (const term of ['llm', 'agent', 'mcp', 'model', 'inference']) {
+    const { items = [] } = await api(`/search/repositories?sort=stars&order=desc&per_page=15&q=${
+      encodeURIComponent(`created:>=${week} stars:>=100 ${term} in:name,description,topics`)}`);
+    out.push(...items.map((r) => ({ source: 'github', kind: 'new-repo', repo: r.full_name, title: `New: ${r.full_name}`,
+      url: r.html_url, published: r.created_at, stars: r.stargazers_count, blurb: r.description ?? '' })));
   }
   return out;
 }

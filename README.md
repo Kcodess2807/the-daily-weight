@@ -17,7 +17,7 @@ npm run build    # static site in dist/
 - `/edition/YYYY-MM-DD/slug` — one story, with photo and full text
 - `/archive` — every edition
 - `/rss.xml`, `/md`, `/json` — feeds for readers and agents (`/md` and `/json` serve the latest edition)
-- `/txt` — the latest edition as plain text, 80 columns, for terminals: `curl -s <site>/txt | less`
+- `/txt` — the latest edition as plain text, 80 columns, for terminals: `curl -s <site>/txt | less`. In Windows PowerShell `curl` is an alias for `Invoke-WebRequest`; type `curl.exe` instead. Locally: `curl.exe -s http://localhost:4321/txt`
 
 ## Make today's edition
 
@@ -30,12 +30,12 @@ This does two things:
 1. `scripts/fetch.mjs` collects candidates from the last 36 hours into `drafts/YYYY-MM-DD.json`. No dependencies, no keys. Sources:
    - **Labs:** OpenAI, Google DeepMind, Google AI and Hugging Face blog feeds, plus Anthropic's sitemap (it has no feed)
    - **Press:** TechCrunch AI, The Verge AI, Ars Technica and Simon Willison, the last two filtered to AI
-   - **Community:** Hacker News (AI stories with 40+ points), Lobsters `ai`, and Reddit's top of the day across r/LocalLLaMA, r/MachineLearning, r/OpenAI and r/ClaudeAI (one combined RSS request; Reddit blocks its JSON API and rate-limits hard)
+   - **Community:** Hacker News (AI stories from 10 points, plus every 150+ point story for the editor to judge), Lobsters `ai`, and Reddit's top of the day across r/LocalLLaMA, r/MachineLearning, r/OpenAI and r/ClaudeAI (one combined RSS request; Reddit blocks its JSON API and rate-limits hard)
    - **Papers:** Hugging Face daily papers, which are arXiv papers ranked by community upvotes
-   - **Code:** stable releases from a watch list of repos (edit `REPOS`) and AI repos on GitHub Trending
+   - **Code:** stable releases from about 30 watch-list repos (edit `REPOS`), AI repos on GitHub Trending (daily and weekly), and new repos from the past week with 100+ stars. Uses `$GITHUB_TOKEN` or your `gh` login if present, since anonymous GitHub allows only 60 requests an hour
 
    A link found in several places is merged into one candidate with `seen_on` listing where. X/Twitter isn't fetched: its API needs a paid key and the free mirrors are gone, so the editor web-searches for anything major that broke there.
-2. Claude Code runs headless (`claude -p`) with `scripts/editor-prompt.md`. It also checks the Anthropic and Meta AI newsrooms, which have no feeds. It then picks 8 to 12 stories, opens each primary source and writes only what it confirms. It adds a photo with `scripts/images.mjs` and runs the build. It uses your existing Claude Code login.
+2. Claude Code runs headless (`claude -p`) with `scripts/editor-prompt.md`. It also checks the Anthropic and Meta AI newsrooms, which have no feeds. It then picks 20 to 30 stories (fewer on a quiet day, never padded), opens each primary source and writes only what it confirms. It adds a photo with `scripts/images.mjs` and runs the build. It uses your existing Claude Code login.
 
 Read the new edition before publishing. The editor is told to drop anything it can't verify, but a human pass is still the last check.
 
