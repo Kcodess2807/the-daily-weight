@@ -66,19 +66,26 @@ const TRUECOLOR = /truecolor|24bit/i.test(process.env.COLORTERM ?? '') || !!proc
 const to256 = (r, g, b) => 16 + 36 * Math.round(r / 51) + 6 * Math.round(g / 51) + Math.round(b / 51);
 const fg = (r, g, b) => (TRUECOLOR ? `${ESC}38;2;${r};${g};${b}m` : `${ESC}38;5;${to256(r, g, b)}m`);
 const bg = (r, g, b) => (TRUECOLOR ? `${ESC}48;2;${r};${g};${b}m` : `${ESC}48;5;${to256(r, g, b)}m`);
-const RESET = `${ESC}0m`, BOLD = `${ESC}1m`, DIM = `${ESC}2m`, ITALIC = `${ESC}3m`;
+const RESET = `${ESC}0m`, BOLD = `${ESC}1m`, ITALIC = `${ESC}3m`;
 
-// Palette: body text uses the terminal's own foreground (and DIM for secondary text), so it reads
-// on light and dark themes alike. Fixed colours only where they sit on their own background.
+// Palette: Catppuccin Mocha pastels, the look of eilmeldung. The app paints its own background,
+// so it looks the same on light and dark terminal themes.
+const P = {
+  base: [30, 30, 46], panel: [37, 37, 56], surface: [49, 50, 68], surface1: [69, 71, 90], overlay: [108, 112, 134],
+  text: [205, 214, 244], subtext: [166, 173, 200], lavender: [180, 190, 254], blue: [137, 180, 250],
+  teal: [148, 226, 213], green: [166, 227, 161], yellow: [249, 226, 175], peach: [250, 179, 135],
+  red: [243, 139, 168], mauve: [203, 166, 247], pink: [245, 194, 231],
+};
 const T = {
-  ink: '', muted: DIM, faint: DIM, accent: fg(226, 84, 96), gold: fg(214, 166, 50), rule: DIM,
-  selFocus: bg(139, 154, 232) + fg(22, 22, 30), selBlur: bg(88, 88, 104) + fg(240, 236, 228),
-  statusBar: bg(139, 154, 232) + fg(22, 22, 30), search: bg(233, 196, 106) + fg(22, 22, 30),
+  ink: fg(...P.text), muted: fg(...P.subtext), faint: fg(...P.overlay), accent: fg(...P.lavender),
+  red: fg(...P.red), gold: fg(...P.yellow), rule: fg(...P.surface1),
+  pane: bg(...P.base) + fg(...P.text), panel: bg(...P.panel) + fg(...P.text),
+  selFocus: bg(...P.lavender) + fg(...P.base), selBlur: bg(...P.surface1) + fg(...P.text),
+  statusBar: bg(...P.lavender) + fg(...P.base), search: bg(...P.yellow) + fg(...P.base),
 };
 const CHIP = {
-  models: [88, 140, 230], agents: [78, 190, 170], infra: [226, 170, 80], research: [170, 130, 230],
-  safety: [230, 100, 110], industry: [120, 190, 100],
-  hn: [255, 128, 40], reddit: [255, 90, 50], labs: [140, 160, 240], arxiv: [200, 70, 70], github: [160, 160, 170], press: [190, 190, 120],
+  models: P.blue, agents: P.teal, infra: P.peach, research: P.mauve, safety: P.red, industry: P.green,
+  hn: P.peach, reddit: P.red, labs: P.lavender, arxiv: P.pink, github: P.subtext, press: P.yellow,
 };
 
 // Display width: CJK and full-width forms take two cells.
@@ -152,11 +159,20 @@ const matches = (s) => !query || [s.title, s.why_read, s.authors.join(' '), SECT
 const stories = () => (edition?.stories ?? []).filter((s) => filter.test(s) && matches(s));
 const current = () => stories()[listAt];
 
+// "Today" and "Yesterday" read better than a date followed by a count ("Wed, Sep 30 30").
+function editionLabel(date) {
+  const local = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const today = new Date();
+  if (date === local(today)) return 'Today';
+  if (date === local(new Date(today.getTime() - 86400000))) return 'Yesterday';
+  return shortDate(date);
+}
+
 function buildTree() {
   const all = edition?.stories ?? [];
   const count = (test) => all.filter(test).length;
   const rows = [{ header: 'Editions' }];
-  for (const e of editions) rows.push({ kind: 'edition', date: e.date, label: shortDate(e.date), count: e.count });
+  for (const e of editions) rows.push({ kind: 'edition', date: e.date, label: editionLabel(e.date), count: e.count });
   rows.push({ header: '' }, { header: 'This edition' });
   const views = [
     ['all', '▸', 'All stories', () => true],
@@ -252,77 +268,57 @@ const storyText = (s) => [
 
 // ---------- rendering ----------
 
-// A bordered pane, eilmeldung-style: title set into the top edge, one space of padding inside.
-// The focused pane gets a heavy red border so focus reads even without colour. `lines` must
-// already be exactly `w - 4` cells wide. `scroll` draws a thumb on the right edge.
-function box(lines, w, h, { title = '', on = false, scroll } = {}) {
-  const [tl, tr, bl, br, hz, vt] = on ? ['┏', '┓', '┗', '┛', '━', '┃'] : ['╭', '╮', '╰', '╯', '─', '│'];
-  const edge = on ? T.accent : T.rule;
-  const innerW = w - 4, innerH = h - 2;
-  const label = title ? ` ${fit(title, Math.max(1, w - 6)).trimEnd()} ` : '';
-  const out = [edge + tl + hz + RESET + (on ? BOLD + T.accent : BOLD + T.muted) + label + RESET
-    + edge + hz.repeat(Math.max(0, w - 3 - width(label))) + tr + RESET];
-  let thumb = null;
-  if (scroll && scroll.total > innerH) {
-    const size = Math.max(1, Math.round((innerH * innerH) / scroll.total));
-    const at = Math.round(((innerH - size) * scroll.top) / Math.max(1, scroll.total - innerH));
-    thumb = [at, at + size];
-  }
-  for (let i = 0; i < innerH; i++) {
-    const right = thumb && i >= thumb[0] && i < thumb[1] ? T.accent + '┃' + RESET : edge + vt + RESET;
-    out.push(edge + vt + RESET + ' ' + (lines[i] ?? ' '.repeat(innerW)) + ' ' + right);
-  }
-  out.push(edge + bl + hz.repeat(w - 2) + br + RESET);
-  return out;
-}
-
 const readingMinutes = (s) => Math.max(1, Math.round(`${s.why_read} ${s.body ?? ''}`.split(/\s+/).length / 220));
 
-// The article, set in a centred reading column of at most 84 cells.
+// Age of a story relative to today, eilmeldung-style: "new", "3d", "2w".
+function age(date) {
+  const days = Math.floor((Date.now() - Date.parse(`${date}T12:00:00Z`)) / 86400000);
+  return days <= 0 ? 'new' : days < 7 ? `${days}d` : `${Math.floor(days / 7)}w`;
+}
+
+// Tag pill: pastel background with half-block caps so the ends look rounded.
+const pill = (key, label, base) => {
+  const c = CHIP[key] ?? P.subtext;
+  return [['▐', fg(...c)], [label, bg(...c) + fg(...P.base) + BOLD], ['▌', fg(...c)], [' ', base]];
+};
+
+// The article, inside the reader panel.
 function readerLines(s, w) {
+  const B = T.panel;
   if (showHelp) return helpLines(w);
-  if (!s) return [line([], w), line([[' Nothing in this view.', T.muted]], w)];
-  const measure = Math.min(w, 84);
-  const pad = Math.floor((w - measure) / 2);
-  const L = (pieces) => line([[' '.repeat(pad)], ...pieces], w);
-  const chip = (key, label) => {
-    const [r, g, b] = CHIP[key] ?? [150, 150, 150];
-    return [` ${label} `, bg(r, g, b) + fg(20, 20, 26) + BOLD];
-  };
-  const tags = [chip(s.section, SECTIONS[s.section].toLowerCase())];
-  for (const src of s.sources) tags.push([' '], chip(src, SOURCES[src]));
-  if (s.must_read) tags.push([' '], [' must read ', bg(226, 84, 96) + fg(255, 255, 255) + BOLD]);
-  else if (s.recommended) tags.push([' '], [' recommended ', bg(88, 88, 104) + fg(240, 236, 228)]);
+  if (!s) return [line([], w, B), line([['Nothing in this view.', T.muted]], w, B)];
+  const measure = Math.min(w, 104);
+  const L = (pieces) => line(pieces, w, B);
+  const tags = [...pill(s.section, SECTIONS[s.section].toLowerCase(), B)];
+  for (const src of s.sources) tags.push(...pill(src, SOURCES[src].toLowerCase(), B));
+  if (s.must_read) tags.push(...pill('safety', 'must read', B));
 
   const out = [
     L([]),
-    L([[`${shortDate(s.date)}  ·  ${SOURCES[s.source]}  ·  ${readingMinutes(s)} min read`, T.muted]]),
-    L([]),
+    L([[`${longDate(s.date)} ── ${SOURCES[s.source]}`, T.accent]]),
     ...wrap(s.title, measure).map((t) => L([[t, BOLD + T.ink, SITE + s.link]])),
-    L([[`by ${s.authors.join(', ')}`, ITALIC + T.muted]]),
-    L([]),
+    L([[`by ${s.authors.join(', ')}`, T.muted]]),
     L(tags),
     L([]),
   ];
-  // "Why read" as a pull quote with a red rule down its left side.
-  out.push(L([['▌ ', T.accent], ['Why read', BOLD + T.accent]]));
-  for (const t of wrap(s.why_read, measure - 2)) out.push(L([['▌ ', T.accent], [t, ITALIC + T.ink]]));
+  const why = wrap(`Why read  ${s.why_read}`, measure);
+  why.forEach((t, i) => out.push(L(i === 0 ? [['Why read', BOLD + T.accent], [t.slice(8), ITALIC + T.ink]] : [[t, ITALIC + T.ink]])));
   out.push(L([]));
   for (const para of plainBody(s.body).split(/\n\s*\n/)) {
     for (const t of wrap(para, measure)) out.push(L([[t, T.ink]]));
     out.push(L([]));
   }
-  out.push(L([['─'.repeat(Math.min(measure, 24)), T.rule]]));
-  const link = (label, url) => L([[label.padEnd(9), T.muted], [url, T.ink, url]]);
-  out.push(link('Source', s.url));
-  if (s.discuss_url) out.push(link('Discuss', s.discuss_url));
-  out.push(link('Website', SITE + s.link));
+  const link = (label, url, key) => L([[`${label} `, T.faint], [key, BOLD + T.accent], ['  '], [url, fg(...P.blue), url]]);
+  out.push(link('Source ', s.url, 'o'));
+  if (s.discuss_url) out.push(link('Discuss', s.discuss_url, 'd'));
+  out.push(link('Website', SITE + s.link, 'w'));
   if (s.image_credit) out.push(L([]), L([[`Photo: ${s.image_credit}`, T.faint]]));
   out.push(L([]));
   return out;
 }
 
 function helpLines(w) {
+  const B = T.panel;
   const keys = [
     ['j / k, ↓ / ↑', 'move (scrolls when the article has focus)'], ['J / K, n / p', 'next / previous story, from any pane'],
     ['tab, h / l', 'switch pane'], ['enter', 'read the story (or open the sidebar item)'],
@@ -332,50 +328,82 @@ function helpLines(w) {
     ['c', 'copy the story as text'], ['u', 'copy the source link'], ['m', 'mark / unmark'],
     ['r', 'toggle read'], ['R', 'mark everything in view as read'], ['?', 'close this help'], ['q', 'quit'],
   ];
-  return [line([], w), ...keys.map(([k, v]) => line([['  ' + k.padEnd(16), BOLD + T.ink], [v, T.muted]], w)),
-    line([], w), line([[`  Reading ${SITE}`, T.faint]], w)];
+  return [line([], w, B), line([['Keys', BOLD + T.accent]], w, B), line([], w, B),
+    ...keys.map(([k, v]) => line([[k.padEnd(16), BOLD + T.ink], [v, T.muted]], w, B)),
+    line([], w, B), line([[`Reading ${SITE}`, T.faint]], w, B)];
 }
 
-// Sidebar rows at inner width iw, scrolled to keep the cursor visible.
+// Pane header: eilmeldung's ☰ ● ★ strip and a thin line. The icons show which view is active,
+// and the header turns lavender on the focused pane.
+function paneHeader(w, on, label = '') {
+  const icon = (ch, key) => [ch + ' ', filter.key === key ? BOLD + T.accent : T.faint];
+  const edge = on ? T.accent : T.rule;
+  const pieces = [[' '], icon('☰', 'all'), icon('●', 'unread'), icon('★', 'marked')];
+  if (label) pieces.push([` ${label} `, on ? BOLD + T.accent : T.muted]);
+  const used = pieces.reduce((n, [t]) => n + width(t), 0);
+  pieces.push(['─'.repeat(Math.max(0, w - used - 1)), edge], [' ']);
+  return line(pieces, w, T.pane);
+}
+
+// Sidebar: a tree like eilmeldung's, with each count in italic lavender right after its label.
 function sidebarLines(iw, ih) {
   if (treeAt < treeTop) treeTop = treeAt;
   if (treeAt >= treeTop + ih) treeTop = treeAt - ih + 1;
   return tree.slice(treeTop, treeTop + ih).map((row, i) => {
-    if ('header' in row) return line(row.header ? [[row.header, BOLD + T.muted]] : [], iw);
+    if ('header' in row) return line(row.header ? [[' ▼ ', T.muted], [row.header, BOLD + T.ink]] : [], iw, T.pane);
     const at = treeTop + i;
     const active = row.kind === 'edition' ? row.date === edition?.date : row.key === filter.key;
     const selected = at === treeAt;
-    const base = selected ? (focus === 0 ? T.selFocus : T.selBlur) : '';
-    const count = String(row.count);
-    const iconStyle = row.chip ? fg(...CHIP[row.chip]) : row.key === 'marked' ? T.gold : row.key === 'must' ? T.accent : T.muted;
+    const base = selected ? (focus === 0 ? T.selFocus : T.selBlur) : T.pane;
+    const iconStyle = row.chip ? fg(...CHIP[row.chip]) : row.key === 'marked' ? T.gold : row.key === 'must' ? T.red : T.accent;
     const icon = row.kind === 'edition' ? (active ? '●' : '○') : row.icon;
     return line([
-      [' '], [icon, selected ? '' : iconStyle], [' '],
-      [fit(row.label, iw - 5 - count.length), (active ? BOLD : '') + (selected ? '' : row.count ? T.ink : T.faint)],
-      [` ${count} `, selected ? '' : T.muted],
+      ['   '], [icon, selected ? '' : iconStyle], [' '],
+      [row.label, BOLD + (selected ? '' : row.count ? T.ink : T.faint)],
+      [` ${row.count}`, ITALIC + BOLD + (selected ? '' : row.count ? T.accent : T.faint)],
+      [active && !selected ? '  ◂' : '', T.accent],
     ], iw, base);
   });
 }
 
-// Story rows: read dot, one marker (marked > must read > recommended), title, section on the right.
+// Story rows: read circle, section dot, marker, age, title. Selected row is a lavender bar.
 function listLines(list, iw, ih) {
   if (listAt < listTop) listTop = listAt;
   if (listAt >= listTop + ih) listTop = listAt - ih + 1;
   if (!list.length && edition) {
-    return [line([[query ? ` Nothing matches "${query}". Esc clears the search.` : ' No stories in this view.', T.muted]], iw)];
+    return [line([[query ? `   Nothing matches "${query}". Esc clears the search.` : '   No stories in this view.', T.muted]], iw, T.pane)];
   }
   return list.slice(listTop, listTop + ih).map((s, i) => {
     const id = idOf(s), selected = listTop + i === listAt;
-    const base = selected ? (focus === 1 ? T.selFocus : T.selBlur) : '';
+    const base = selected ? (focus === 1 ? T.selFocus : T.selBlur) : T.pane;
     const unread = !state.read[id];
-    const [mark, markStyle] = state.marked[id] ? ['★', T.gold] : s.must_read ? ['◆', T.accent] : s.recommended ? ['◇', T.muted] : [' ', ''];
-    const section = SECTIONS[s.section];
+    const [mark, markStyle] = state.marked[id] ? ['★', T.gold] : s.must_read ? ['◆', T.red] : s.recommended ? ['◇', T.faint] : [' ', ''];
     return line([
-      [' '], [unread ? '●' : ' ', selected ? '' : T.accent], [' '], [mark, selected ? '' : markStyle], ['  '],
-      [fit(s.title, iw - 7 - width(section) - 1), selected ? BOLD : unread ? T.ink : T.muted],
-      [' '], [section, selected ? '' : fg(...CHIP[s.section])], [' '],
+      ['  '], [unread ? '●' : '○', selected ? '' : unread ? T.accent : T.faint], ['   '],
+      ['■', selected ? '' : fg(...CHIP[s.section])], [' '], [mark, selected ? '' : markStyle], ['   '],
+      [age(s.date).padStart(3), selected ? '' : T.muted], ['   '],
+      [s.title, BOLD + (selected ? '' : unread ? T.ink : T.muted)],
     ], iw, base);
   });
+}
+
+// The reader panel: a rounded box on a slightly lighter background, with a scroll thumb.
+function panel(lines, w, h, scroll) {
+  const innerW = w - 6, innerH = h - 2;
+  const edge = bg(...P.base) + (focus === 2 ? T.accent : T.rule);
+  let thumb = null;
+  if (scroll.total > innerH) {
+    const size = Math.max(1, Math.round((innerH * innerH) / scroll.total));
+    const at = Math.round(((innerH - size) * scroll.top) / Math.max(1, scroll.total - innerH));
+    thumb = [at, at + size];
+  }
+  const out = [edge + '╭' + '─'.repeat(w - 2) + '╮' + RESET];
+  for (let i = 0; i < innerH; i++) {
+    const right = thumb && i >= thumb[0] && i < thumb[1] ? bg(...P.base) + T.accent + '┃' : edge + '│';
+    out.push(edge + '│' + RESET + T.panel + '  ' + (lines[i] ?? line([], innerW, T.panel)) + T.panel + '  ' + right + RESET);
+  }
+  out.push(edge + '╰' + '─'.repeat(w - 2) + '╯' + RESET);
+  return out;
 }
 
 function render() {
@@ -388,48 +416,40 @@ function frame() {
   const list = stories();
   const s = current();
 
-  // Wide terminals get three columns; narrower ones stack the list over the article.
-  const wide = W >= 150;
-  const SW = Math.max(24, Math.min(32, Math.floor(W * 0.2)));
-  const LW = wide ? Math.max(48, Math.min(76, Math.floor((W - SW) * 0.42))) : W - SW;
-  const AW = wide ? W - SW - LW : W - SW;
-  const LH = wide ? bodyH : Math.max(6, Math.min(list.length + 2, Math.floor(bodyH * 0.42)));
-  const AH = wide ? bodyH : bodyH - LH;
+  // eilmeldung's proportions: a quarter-width sidebar, a short list, and the article filling the rest.
+  const SW = Math.max(24, Math.min(40, Math.floor(W * 0.25)));
+  const RW = W - SW - 1;
+  const LH = Math.max(4, Math.min(list.length || 1, 8, Math.floor(bodyH * 0.3))) + 1; // + header
+  const AH = bodyH - LH;
 
-  const heading = edition
-    ? `${shortDate(edition.date)} · ${filter.label}${query ? ` · "${query}"` : ''} · ${list.length}` : 'Loading…';
-  const sidebar = box(sidebarLines(SW - 4, bodyH - 2), SW, bodyH, { title: 'The Daily Weight', on: focus === 0 });
-  const stories_ = box(listLines(list, LW - 4, LH - 2), LW, LH,
-    { title: heading, on: focus === 1, scroll: { top: listTop, total: list.length } });
+  const side = [paneHeader(SW, focus === 0), ...sidebarLines(SW, bodyH - 1)];
+  while (side.length < bodyH) side.push(line([], SW, T.pane));
 
-  const article = readerLines(s, AW - 4);
+  const label = edition ? `${shortDate(edition.date)} · ${filter.label}${query ? ` · "${query}"` : ''} · ${list.length}` : 'Loading…';
+  const right = [paneHeader(RW, focus === 1, label), ...listLines(list, RW, LH - 1)];
+  while (right.length < LH) right.push(line([], RW, T.pane));
+
+  const article = readerLines(s, RW - 6);
   const AI = AH - 2;
   readerTop = Math.max(0, Math.min(readerTop, Math.max(0, article.length - AI)));
-  const aTitle = showHelp ? 'Keys' : s ? `Story ${listAt + 1} of ${list.length}` : 'Article';
-  const reader = box(article.slice(readerTop, readerTop + AI), AW, AH,
-    { title: aTitle, on: focus === 2, scroll: { top: readerTop, total: article.length } });
+  right.push(...panel(article.slice(readerTop, readerTop + AI), RW, AH, { top: readerTop, total: article.length }));
 
-  // status bar: search prompt while typing, otherwise hints for the focused pane
+  // Status bar: the story's link on the left (as eilmeldung shows it), position and hints on the right.
   let status;
   if (searching) {
     const hint = '  enter keep · esc clear ';
     status = line([[fit(` / ${query}▏`, W - width(hint))], [hint]], W, T.search);
   } else {
-    const hints = [
-      'j/k choose · enter open edition · l stories · / search · ? keys · q quit',
-      'j/k move · enter read · J/K next/prev · o source · d discuss · c copy · m mark · / search · ? keys',
-      'j/k scroll · space/b page · J/K next/prev story · esc list · o source · c copy · ? keys',
-    ][focus];
+    const hints = ['enter open · / search · ? keys · q quit', 'enter read · J/K next · o open · c copy · ? keys',
+      'j/k scroll · space page · J/K next · esc back · ? keys'][focus];
     const pct = article.length > AI ? `${Math.round(((readerTop + AI) / article.length) * 100)}%` : '';
-    const where = [list.length ? `${listAt + 1}/${list.length}` : '', pct].filter(Boolean).join('  ');
-    status = line([[fit(` ${message || hints}`, W - width(where) - 2)], [` ${where} `]], W, T.statusBar);
+    const where = [list.length ? `${listAt + 1}/${list.length}` : '', pct, hints].filter(Boolean).join('  ·  ');
+    status = line([[fit(` ${message || s?.url || ''}`, W - width(where) - 2)], [` ${where} `]], W, T.statusBar);
   }
 
+  const sep = bg(...P.base) + T.rule + '│' + RESET;
   let out = `${ESC}H`;
-  for (let r = 0; r < bodyH; r++) {
-    const rightCol = wide ? stories_[r] + reader[r] : (r < LH ? stories_[r] : reader[r - LH]);
-    out += sidebar[r] + rightCol + '\r\n';
-  }
+  for (let r = 0; r < bodyH; r++) out += side[r] + sep + right[r] + '\r\n';
   return out + status;
 }
 

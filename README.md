@@ -27,14 +27,14 @@ npm run tui                          # reads the local site (npm run dev in anot
 npm run tui -- https://your.domain   # reads the published paper
 ```
 
-A three-pane reader in bordered panes: editions, views (unread, marked, must-read), sections and sources on the left; the story list; the article in a centred reading column. Terminals 150+ columns wide get three side-by-side columns; narrower ones stack the list over the article. The focused pane has a heavy red border. No dependencies, and it works in Windows Terminal, Warp, macOS and Linux terminals.
+A three-pane reader in the style of [eilmeldung](https://www.reddit.com/r/CLI/comments/1qxbw8b/eilmeldung_a_tui_rss_reader/): a sidebar tree (editions as Today / Yesterday, your views, sections, sources), a short story list, and the article in a rounded panel with tag pills, on a Catppuccin-style pastel palette. The app paints its own background, so it looks the same on light and dark terminal themes. The focused pane's header and selection turn lavender, and the status bar shows the current story's link. No dependencies; works in Windows Terminal, Warp, macOS and Linux terminals.
 
 | Key | Does |
 |---|---|
 | `j`/`k` or arrows | move (scrolls when the article has focus) |
 | `J`/`K` or `n`/`p` | next / previous story, from any pane |
 | `/` | search the current view as you type; `enter` keeps it, `esc` clears it |
-| `tab`, `h`/`l` | switch pane (the focused pane's title turns red) |
+| `tab`, `h`/`l` | switch pane (the focused pane's header turns lavender) |
 | `enter` | read the story, or open the sidebar item (editions load on enter) |
 | `space`/`b`, `g`/`G` | page the article, jump to top/bottom |
 | `o` / `d` / `w` | open the source / the discussion / the story on the website |
@@ -42,7 +42,7 @@ A three-pane reader in bordered panes: editions, views (unread, marked, must-rea
 | `m` / `r` / `R` | mark, toggle read, mark all in view read |
 | `?` / `q` | keys / quit |
 
-A story counts as read after it has been on screen for a moment or when you open it, not when you scroll past it. Links in the article are clickable in terminals that support it (Windows Terminal, iTerm2, kitty, GNOME Terminal). Text uses your terminal's own colours, so light and dark themes both work, and terminals without 24-bit colour get the nearest 256-colour match. Read and marked stories are remembered in `~/.daily-weight.json`. The reader uses `/editions.json` and `/edition/<date>.json`, which any other client can use too. `npm run check:tui` checks its layout at several terminal sizes.
+A story counts as read after it has been on screen for a moment or when you open it, not when you scroll past it. Links in the article are clickable in terminals that support it (Windows Terminal, iTerm2, kitty, GNOME Terminal). Terminals without 24-bit colour get the nearest 256-colour match. Read and marked stories are remembered in `~/.daily-weight.json`. The reader uses `/editions.json` and `/edition/<date>.json`, which any other client can use too. `npm run check:tui` checks its layout at several terminal sizes.
 
 ## Make today's edition
 

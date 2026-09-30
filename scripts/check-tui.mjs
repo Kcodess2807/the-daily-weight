@@ -7,7 +7,9 @@ const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\][0-9]+;[^\x
 const WIDE = /[\u1100-\u115f\u2e80-\u303e\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
 const width = (l) => [...l].reduce((n, c) => n + (WIDE.test(c) ? 2 : 1), 0);
 let fail = 0;
-const snap = (size, keys = '') => strip(execFileSync('node', ['bin/daily-weight.mjs', '--snapshot', '--size', size, '--keys', keys], { encoding: 'utf8' }));
+const raw = (size, keys = '') => execFileSync('node', ['bin/daily-weight.mjs', '--snapshot', '--size', size, '--keys', keys],
+  { encoding: 'utf8', env: { ...process.env, COLORTERM: 'truecolor' } });
+const snap = (size, keys) => strip(raw(size, keys));
 for (const [size, keys, label] of [
   ['120x34', '', 'start'], ['80x24', '', 'small'], ['200x50', '', 'wide'], ['60x20', '', 'tiny'],
   ['120x34', 'hjjjjj', 'sidebar -> Must read'], ['120x34', 'hj\r', 'sidebar -> Sep 29'],
@@ -22,21 +24,26 @@ for (const [size, keys, label] of [
 }
 
 // Behaviour: what the screen says after a key sequence.
-const expect = (label, keys, test) => {
-  const out = snap(label.startsWith('wide') ? '180x40' : '120x34', keys);
-  const ok = test(out);
+const expect = (label, keys, test, get = snap) => {
+  const ok = test(get('120x34', keys));
   if (!ok) fail++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}`);
 };
-const heading = (out) => out.split('\n')[0]; // the list box's title sits in the top border
-const count = (out) => Number(heading(out).match(/· (\d+) [─━]/)?.[1]);
+const heading = (out) => out.split('\n')[0]; // pane headers: sidebar, then the list's label
+const count = (out) => Number(heading(out).match(/· (\d+) ─/)?.[1]);
+const statusBar = (out) => out.trimEnd().split('\n').at(-1);
+// The line carrying the focused selection bar (lavender background).
+const focusedLine = (rawOut) => strip(rawOut.split('\n').find((l) => l.includes('48;2;180;190;254;')
+  || l.includes('48;2;180;190;254m')) ?? '');
 expect('search narrows the list and names the query', '/openai\r',
   (o) => heading(o).includes('"openai"') && count(o) > 0 && count(o) < count(snap('120x34')));
 expect('a search with no matches says how to clear it', '/zzqqxx\r', (o) => o.includes('Nothing matches "zzqqxx". Esc clears'));
 expect('esc clears the search', '/openai\r\x1b', (o) => !heading(o).includes('"openai"'));
-expect('J moves to the next story from the article pane', '\rJ', (o) => /Story 2 of \d+/.test(o));
-expect('the focused pane gets the heavy border', 'h', (o) => o.startsWith('┏━ The Daily Weight') && heading(o).includes('╭─ '));
-expect('wide terminals get three columns', '', (o) => (heading(o).match(/[╭┏]/g) ?? []).length === 3);
-expect('the status bar shows the position', 'jj', (o) => /\b3\/\d+\b/.test(o.split('\n').at(-2) || o.split('\n').at(-1)));
+expect('J moves to the next story from the article pane', '\rJ', (o) => /\b2\/\d+/.test(statusBar(o)));
+expect('the status bar shows the position', 'jj', (o) => /\b3\/\d+/.test(statusBar(o)));
+// The sidebar's first edition row reads "Today", "Yesterday" or a date, depending on the day you run this.
+const editionRow = /\b(Today|Yesterday|[A-Z][a-z]{2}, [A-Z][a-z]{2} \d+) \d+/;
+expect('the list has focus at start', '', (o) => focusedLine(o).length > 0 && !editionRow.test(focusedLine(o)), raw);
+expect('h moves focus to the sidebar', 'h', (o) => editionRow.test(focusedLine(o)), raw);
 
 process.exitCode = fail ? 1 : 0;
