@@ -87,3 +87,7 @@ All colours and type live as variables at the top of `src/styles/main.css`. No r
 JavaScript is used only for filters and the Day/Night toggle, and the page reads fine without it.
 
 Use freely licensed photos (Wikimedia Commons, CC0/CC BY/CC BY-SA) and always fill in the credit. Avoid photos of real people or brand logos on stories they have nothing to do with.
+
+## License
+
+Code is MIT (see `LICENSE`). Story photos keep their own Creative Commons or public-domain licences from Wikimedia Commons, credited on each story page.

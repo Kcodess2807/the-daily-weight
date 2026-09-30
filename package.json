@@ -2,6 +2,7 @@
   "name": "the-daily-weight",
   "type": "module",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
