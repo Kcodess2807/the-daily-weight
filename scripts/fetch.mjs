@@ -36,7 +36,11 @@ const REPOS = [
   'ollama/ollama', 'openai/codex', 'anthropics/claude-code', 'google-gemini/gemini-cli',
   'NVIDIA/TensorRT-LLM', 'pytorch/pytorch',
 ];
-const AI = /\b(ai|llms?|gpt[-\w.]*|claude|gemini|openai|anthropic|deepmind|mistral|llama|qwen|deepseek|kimi|jev|agents?|agentic|inference|transformers?|diffusion|neural|models?|benchmark|evals?|fine-?tun\w*|rlhf|tokens?|gpus?|cuda|mcp)\b/i;
+// A title hint, not a gate: product names change weekly, so the big HN stories go to the editor
+// even when this misses (see hn()). "gpt" has no leading \b so ChatGPT/GPTs match.
+const AI = /gpt|\b(ai|a\.i\.|llms?|ml|machine learning|deep learning|claude|opus|sonnet|haiku|gemini|gemma|openai|anthropic|deepmind|mistral|llama|qwen|deepseek|kimi|glm|grok|xai|jev|codex|copilot|cursor|agents?|agentic|chatbots?|inference|transformers?|diffusion|neural|models?|benchmarks?|evals?|fine-?tun\w*|rlhf|tokens?|gpus?|tpus?|cuda|nvidia|mcp|hugging ?face|robot\w*|facial recognition|face scans?|alignment|interpretability)\b/i;
+const AI_DOMAINS = /(openai|anthropic|deepmind|huggingface|arxiv|mistral|x\.ai|together|fireworks|groq|cerebras|ollama|lmsys|meta\.com\/ai|ai\.google|nvidia)\./i;
+const isAI = (title, url = '') => AI.test(title) || AI_DOMAINS.test(url);
 
 const inWindow = (t) => t >= since && t <= until;
 const iso = (t) => new Date(t).toISOString();
@@ -99,10 +103,12 @@ async function hn() {
   const url = `https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=300`
     + `&numericFilters=created_at_i>${since / 1000},created_at_i<${until / 1000},points>40`;
   const { hits } = await get(url);
-  return hits.filter((h) => AI.test(h.title)).map((h) => ({
+  // Keep every AI-looking story, plus every front-page-sized one (150+ points) flagged
+  // ai_match: false, so a headline that never says "AI" still reaches the editor.
+  return hits.filter((h) => isAI(h.title, h.url) || h.points >= 150).map((h) => ({
     source: 'hn', title: h.title, url: h.url ?? `https://news.ycombinator.com/item?id=${h.objectID}`,
     discuss_url: `https://news.ycombinator.com/item?id=${h.objectID}`,
-    published: h.created_at, points: h.points, comments: h.num_comments,
+    published: h.created_at, points: h.points, comments: h.num_comments, ai_match: isAI(h.title, h.url),
   }));
 }
 

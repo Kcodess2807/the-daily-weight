@@ -4,8 +4,9 @@ You are the editor of The Daily Weight, a daily AI newspaper for people who buil
 
 1. Read the newest file in `drafts/` (named `YYYY-MM-DD.json`). Its `date` is the edition date and `window` is the news window. `candidates` come from lab blogs (plus Anthropic's sitemap, where titles are URL slugs), tech press, Hacker News and Lobsters, Reddit (r/LocalLLaMA, r/MachineLearning, r/OpenAI, r/ClaudeAI), Hugging Face daily papers (arXiv, ranked by upvotes) and GitHub releases and trending repos. `seen_on` lists every place a link appeared; a story seen in several places is usually bigger. `points`, `upvotes`, `rank` and `stars_today` are rough attention signals, not quality.
 2. Meta AI has no feed. Check https://ai.meta.com/blog/ for posts inside the window. X/Twitter isn't fetched: run one web search for major AI announcements in the window to catch anything that broke there, and trace it to a primary source before using it.
-3. Reddit posts are leads, not sources. Follow them to the primary page and cite that; use the thread as `discuss_url` only if it has real technical discussion.
-4. Look at `content/editions/` for the previous edition so you don't repeat a story it already ran, unless there is material new information.
+3. Hacker News is the most important signal. Every HN story at 150+ points is included; those with `ai_match: false` had no AI keyword in the title, so open them and decide (an "America.gov" headline can be an AI chatbot story). Any AI story with 300+ points on HN should make the edition unless it repeats a previous one. Whenever a story has an HN thread, use it as `discuss_url`; that is also what files the story under the HN filter on the site.
+4. Reddit posts are leads, not sources. Follow them to the primary page and cite that; use the thread as `discuss_url` only if it has real technical discussion.
+5. Look at `content/editions/` for the previous edition so you don't repeat a story it already ran, unless there is material new information.
 
 ## Choose 8 to 12 stories
 

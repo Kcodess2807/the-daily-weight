@@ -7,11 +7,20 @@ export const SOURCES = {
   hn: 'HN', reddit: 'Reddit', labs: 'Labs', arxiv: 'arXiv', github: 'GitHub', press: 'Press',
 } as const;
 
+// Every source filter a story answers to: its primary type, plus HN or Reddit when that's
+// where it's being discussed. A lab post with a big HN thread shows under both Labs and HN.
+export const sourcesOf = ({ data: d }: Story) => {
+  const tags = new Set<string>([d.source]);
+  if (d.discuss_url?.includes('news.ycombinator.com')) tags.add('hn');
+  if (d.discuss_url?.includes('reddit.com')) tags.add('reddit');
+  return [...tags];
+};
+
 // Attributes the front-page filter reads; shared by story blocks and the headline rail.
-export const filterAttrs = ({ data: d }: Story) => ({
-  'data-source': d.source,
-  'data-rec': String(d.recommended || d.must_read),
-  'data-must': String(d.must_read),
+export const filterAttrs = (story: Story) => ({
+  'data-source': sourcesOf(story).join(' '),
+  'data-rec': String(story.data.recommended || story.data.must_read),
+  'data-must': String(story.data.must_read),
 });
 export const SECTIONS = {
   models: 'Models', agents: 'Agents', infra: 'Infra', research: 'Research', safety: 'Safety', industry: 'Industry',

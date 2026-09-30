@@ -1,8 +1,8 @@
 ---
-import { SOURCES, type Story } from '../editions';
+import { SOURCES, sourcesOf, type Story } from '../editions';
 interface Props { stories: Story[] }
 const { stories } = Astro.props;
-const count = (key: string) => (key === 'all' ? stories.length : stories.filter((s) => s.data.source === key).length);
+const count = (key: string) => (key === 'all' ? stories.length : stories.filter((s) => sourcesOf(s).includes(key)).length);
 const sources = [['all', 'All'], ...Object.entries(SOURCES)];
 const quality = [['all', 'All'], ['rec', 'Recommended'], ['must', 'Must-Read']];
 ---
@@ -38,7 +38,7 @@ const quality = [['all', 'All'], ['rec', 'Recommended'], ['must', 'Must-Read']];
     const q = (form.elements.namedItem('quality') as RadioNodeList).value;
     let n = 0;
     for (const el of items) {
-      const show = (src === 'all' || el.dataset.source === src) && (q === 'all' || el.dataset[q] === 'true');
+      const show = (src === 'all' || el.dataset.source!.split(' ').includes(src)) && (q === 'all' || el.dataset[q] === 'true');
       el.hidden = !show;
       if (show && el.classList.contains('story')) n++;
     }
