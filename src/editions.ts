@@ -50,6 +50,18 @@ export const longDate = (date: string) =>
 
 export const plural = (n: number) => `${n} ${n === 1 ? 'Story' : 'Stories'}`;
 
+// One edition as JSON for agents and the terminal reader (/json, /edition/<date>.json).
+export const editionJson = (e: Edition) => JSON.stringify({
+  date: e.date,
+  count: e.stories.length,
+  stories: e.stories.map((s) => ({
+    ...s.data, slug: slug(s), link: href(s), sources: sourcesOf(s), body: s.body?.trim(),
+  })),
+}, null, 2);
+
+export const jsonResponse = (body: string) =>
+  new Response(body, { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
+
 // Front page split: lead, two seconds, then the rest boxed by section (only sections with stories left).
 export function frontPage({ stories }: Edition) {
   const [lead, ...others] = stories;

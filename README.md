@@ -17,7 +17,30 @@ npm run build    # static site in dist/
 - `/edition/YYYY-MM-DD/slug` — one story, with photo and full text
 - `/archive` — every edition
 - `/rss.xml`, `/md`, `/json` — feeds for readers and agents (`/md` and `/json` serve the latest edition)
+- `/editions.json`, `/edition/YYYY-MM-DD.json` — every edition's date and count, and any edition in full
 - `/txt` — the latest edition as plain text, 80 columns, for terminals: `curl -s <site>/txt | less`. In Windows PowerShell `curl` is an alias for `Invoke-WebRequest`; type `curl.exe` instead. Locally: `curl.exe -s http://localhost:4321/txt`
+
+## Read it in the terminal
+
+```sh
+npm run tui                          # reads the local site (npm run dev in another terminal)
+npm run tui -- https://your.domain   # reads the published paper
+```
+
+A three-pane reader: editions, views (unread, marked, must-read), sections and sources on the left; the story list top right; the article below it. No dependencies, and it works in Windows Terminal, macOS and Linux terminals.
+
+| Key | Does |
+|---|---|
+| `j`/`k` or arrows | move |
+| `tab`, `h`/`l` | switch pane |
+| `enter` | open the story, or the sidebar item (editions load on enter) |
+| `space`/`b`, `g`/`G` | page the article, jump to top/bottom |
+| `o` / `d` / `w` | open the source / the discussion / the story on the website |
+| `c` / `u` | copy the story as text / copy the source link |
+| `m` / `r` / `R` | mark, toggle read, mark all in view read |
+| `?` / `q` | keys / quit |
+
+Read and marked stories are remembered in `~/.daily-weight.json`. The reader uses `/editions.json` and `/edition/<date>.json`, which any other client can use too. `npm run check:tui` checks its layout at several terminal sizes.
 
 ## Make today's edition
 

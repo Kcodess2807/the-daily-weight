@@ -3,12 +3,17 @@
   "type": "module",
   "private": true,
   "license": "MIT",
+  "bin": {
+    "daily-weight": "bin/daily-weight.mjs"
+  },
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
     "fetch": "node scripts/fetch.mjs",
-    "edition": "node scripts/fetch.mjs && claude -p \"Follow the instructions in scripts/editor-prompt.md\" --allowedTools \"Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Bash(node scripts/images.mjs:*),Bash(node scripts/drop.mjs:*),Bash(npm run build)\""
+    "edition": "node scripts/fetch.mjs && claude -p \"Follow the instructions in scripts/editor-prompt.md\" --allowedTools \"Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Bash(node scripts/images.mjs:*),Bash(node scripts/drop.mjs:*),Bash(npm run build)\"",
+    "tui": "node bin/daily-weight.mjs",
+    "check:tui": "node scripts/check-tui.mjs"
   },
   "dependencies": {
     "astro": "^7.3.5"
