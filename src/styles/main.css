@@ -353,3 +353,12 @@ p { margin: 0 0 0.8em; }
 .top:not(:has(.story:not([hidden]))),
 .seconds:not(:has(.story:not([hidden]))) { display: none; }
 .empty[data-empty] { margin: 20px 0; padding: 18px; border: 1px solid var(--rule); }
+
+.cli { margin: 0 0 8px; }
+.cli code {
+  padding: 2px 6px;
+  border: 1px solid var(--rule);
+  font: 0.85rem/1.4 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  color: var(--ink);
+  user-select: all; /* one click selects the whole command */
+}

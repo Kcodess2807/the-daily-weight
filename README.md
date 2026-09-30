@@ -17,6 +17,7 @@ npm run build    # static site in dist/
 - `/edition/YYYY-MM-DD/slug` — one story, with photo and full text
 - `/archive` — every edition
 - `/rss.xml`, `/md`, `/json` — feeds for readers and agents (`/md` and `/json` serve the latest edition)
+- `/txt` — the latest edition as plain text, 80 columns, for terminals: `curl -s <site>/txt | less`
 
 ## Make today's edition
 

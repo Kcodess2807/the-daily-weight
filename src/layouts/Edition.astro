@@ -77,7 +77,9 @@ const otherEditions = (await getEditions()).filter((e) => e.date !== edition.dat
           <a href="/rss.xml">RSS</a>
           <a href="/md">Markdown</a>
           <a href="/json">JSON</a>
+          <a href="/txt">Text</a>
         </nav>
+        <p class="cli">In a terminal: <code>curl -s {new URL('/txt', Astro.site)}</code></p>
         <p>One edition a day on models, agents, infra, research and safety. The paper ends when you reach the bottom.</p>
       </footer>
     </div>
